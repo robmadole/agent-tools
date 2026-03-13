@@ -4,8 +4,16 @@ A [Claude Code](https://claude.ai/code) plugin marketplace package providing tes
 
 ## Installation
 
+In Claude Code:
+
+```
+/plugin marketplace add robmadole/agent-tools
+```
+
+Using open agent skills (for other Agents):
+
 ```bash
-npx skills add /path/to/agent-tools
+npx skills add robmadole/agent-tools
 ```
 
 ## Plugins
