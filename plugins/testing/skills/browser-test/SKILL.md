@@ -242,7 +242,7 @@ After all phases complete, present the final summary to the operator:
 After all phases are complete and the Presentation has been shown, the Lead validates every spec file in `browser-tests/specs/` using the validation script:
 
 ```bash
-find browser-tests/specs -name '*.feature' -exec node {absolute path to this skill}/scripts/validate.js {} \;
+find browser-tests/specs -name '*.feature' -exec bun {absolute path to this skill}/scripts/validate.js {} \;
 ```
 
 - If any files fail validation, read the file, fix common issues (missing Feature keyword, malformed tables, indentation), and re-validate.

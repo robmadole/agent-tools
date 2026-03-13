@@ -1,26 +1,26 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 /**
  * Validates Gherkin .feature files using the @cucumber/gherkin parser.
  *
- * Usage: node validate.js <file1.feature> [file2.feature ...]
+ * Usage: bun validate.js <file1.feature> [file2.feature ...]
  * Output: JSON to stdout with structure:
  *   { valid: boolean, files: [{ path: string, valid: boolean, errors: string[] }] }
  * Exit code: 0 if all files valid, 1 if any errors
  */
 
-const fs = require("fs");
-const {
+import fs from "fs";
+import {
   AstBuilder,
   GherkinClassicTokenMatcher,
   Parser,
-} = require("@cucumber/gherkin");
-const { IdGenerator } = require("@cucumber/messages");
+} from "@cucumber/gherkin";
+import { IdGenerator } from "@cucumber/messages";
 
 const args = process.argv.slice(2);
 
 if (args.length === 0) {
-  console.error("Usage: node validate.js <file1.feature> [file2.feature ...]");
+  console.error("Usage: bun validate.js <file1.feature> [file2.feature ...]");
   process.exit(2);
 }
 
