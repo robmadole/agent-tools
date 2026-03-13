@@ -1,0 +1,24 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "agent-tools",
+  "version": "0.0.1",
+  "owner": {
+    "name": "Rob Madole"
+  },
+  "plugins": [
+    {
+      "name": "testing",
+      "description": "Testing tools for developing software",
+      "source": "./plugins/testing",
+      "category": "testing",
+      "tags": [
+        "testing",
+        "browser",
+        "qa",
+        "gherkin",
+        "elixir"
+      ],
+      "version": "1.0.7"
+    }
+  ]
+}

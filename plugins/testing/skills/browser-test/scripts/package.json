@@ -1,0 +1,10 @@
+{
+  "name": "browser-test-scripts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Gherkin validation scripts for browser-test skill",
+  "dependencies": {
+    "@cucumber/gherkin": "^29.0.0",
+    "@cucumber/messages": "^26.0.0"
+  }
+}

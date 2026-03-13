@@ -1,0 +1,8 @@
+{
+  "name": "testing",
+  "description": "Testing tools for developing software",
+  "version": "1.0.7",
+  "author": {
+    "name": "Rob Madole"
+  }
+}

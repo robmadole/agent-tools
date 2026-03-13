@@ -1,0 +1,8 @@
+pre-commit:
+  commands:
+    deploy-skills:
+      run: bash scripts/deploy-skills.sh
+      stage_fixed: true
+    bump-plugin-versions:
+      run: bash scripts/bump-plugin-versions.sh
+      stage_fixed: true
