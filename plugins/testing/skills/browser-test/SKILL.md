@@ -1,6 +1,6 @@
 ---
 name: browser-test
-description: "Orchestrate QA browser testing via Gherkin specs using Claude Agent Teams. Invoked via commands: /browser-test-setup, /browser-test-create, /browser-test-run."
+description: "Orchestrate QA browser testing via Gherkin specs using Claude Agent Teams and Playwright MCP. Invoked via commands: /browser-test-setup, /browser-test-create, /browser-test-run."
 version: 1.1.0
 ---
 
@@ -10,7 +10,7 @@ You are the **Lead** of a QA browser testing team. You orchestrate a multi-phase
 
 ## Teammate Lifecycle
 
-Spawn each teammate **exactly once** during the session. All teammates remain active for the entire workflow and accept new work via messages from the Lead. Do not terminate and re-spawn teammates between phases — reuse the existing instances.
+Spawn each teammate **exactly once** during the session. All teammates remain active for the entire workflow and accept new work via messages from the Lead or directly from other teammates. Do not terminate and re-spawn teammates between phases — reuse the existing instances.
 
 The spawn order is:
 1. **Phase 1**: Spawn Hunter, Librarian, Runner, Scribe, and Sneak
@@ -22,9 +22,19 @@ Each teammate's task assignment (below) describes ALL of their responsibilities 
 
 ## Prerequisites
 
-**This skill requires Claude Agent Teams.** Before proceeding, verify that the `TeamCreate` and `SendMessage` tools are available. If they are not, stop immediately and tell the operator:
+Before proceeding, verify both of the following. If either check fails, stop immediately with the corresponding message.
 
-> This skill requires Agent Teams to function. Please enable Agent Teams before running `/browser-test`.
+1. **Agent Teams** — Verify that the `TeamCreate` and `SendMessage` tools are available.
+
+   > This skill requires Agent Teams to function. Please enable Agent Teams before running `/browser-test`.
+
+2. **Playwright MCP** — Verify that `mcp__playwright__browser_navigate` (or any `mcp__playwright__*` tool) is available.
+
+   > This skill requires the Playwright MCP server. Please add it to your MCP configuration before running `/browser-test`.
+
+3. **Bun** — Verify that `bun` is available by running `bun --version`.
+
+   > This skill requires Bun to run the validation script. Install it from https://bun.sh before running `/browser-test`.
 
 ---
 
@@ -38,7 +48,7 @@ Read `.browser-tests.json` from the repository root. If it does **not** exist, s
 
 > No `.browser-tests.json` found. Run `/browser-test-setup` first to configure the browser testing environment.
 
-If it exists, load `browserMCPName`, `directory`, `baseURL`, and `furtherSetup` from it.
+If it exists, load `directory`, `baseURL`, and `furtherSetup` from it.
 
 If `furtherSetup` is set, fetch that URL and read its contents. This provides project-specific testing context (test credentials, seed data, application quirks) that should be passed to teammates — especially the Runner and Hunter.
 
@@ -80,30 +90,23 @@ Spawn all five teammates simultaneously: **Hunter**, **Librarian**, **Runner**, 
 
 ### Hunter (blue)
 
-Task assignment: Read `references/hunter-prompt.md` and use it as the task assignment message. Substitute template variables ({chrome-devtools or playwright}, {base URL}, {absolute path to this skill}, and the gathered context) before sending.
+Task assignment: Read `references/hunter-prompt.md` and use it as the task assignment message. Substitute template variables ({base URL}, {absolute path to this skill}, and the gathered context) before sending.
 
 ### Librarian (green)
 
 Task assignment: Read `references/librarian-prompt.md` and use it as the task assignment message.
 
-**Wait** for the Librarian to send `specs_ready` before proceeding to Phase 2.
+### Runner (yellow)
+
+Task assignment: Read `references/runner-prompt.md` and use it as the task assignment message. Substitute template variables ({base URL}) before sending.
 
 ---
 
 ## Phase 2 — Execution
 
-Send a `run_specs` message to the Runner with the list of spec files from the Librarian's `specs_ready` message:
+The Librarian sends `run_specs` directly to the Runner after organizing specs — the Lead does **not** need to relay this. The Librarian also sends `specs_ready` to the Lead as a CC.
 
-```json
-{
-  "type": "run_specs",
-  "files": ["browser-tests/specs/sign-in/manager-sign-in.feature", ...]
-}
-```
-
-### Runner (yellow)
-
-Task assignment: Read `references/runner-prompt.md` and use it as the task assignment message. Substitute template variables ({chrome-devtools or playwright}, {base URL}) before sending.
+The Runner executes specs and sends `test_results` to the Lead, Scribe, and Sneak. If there are failures, the Runner also sends `repair_needed` directly to the Hunter — the Lead does **not** need to relay this either.
 
 **Wait** for the Runner to send `test_results` before proceeding.
 
@@ -113,25 +116,7 @@ If there are **any failures**, proceed to Phase 2b — Spec Repair. If all scena
 
 ## Phase 2b — Spec Repair
 
-When the Runner reports failed scenarios, the specs may be stale — the application behavior may have changed legitimately since the specs were written. Send a `repair_needed` message to the Hunter with the failed scenarios. The Sneak will automatically receive `spec_repair` messages from the Hunter and activate its Repair Audit role.
-
-Send to the Hunter:
-
-```json
-{
-  "type": "repair_needed",
-  "failed_scenarios": [
-    {
-      "file": "browser-tests/specs/sign-in/manager-sign-in.feature",
-      "scenario_name": "Failed sign-in with wrong password",
-      "failure_reason": "Expected to see 'Invalid email or password' but text not found",
-      "failed_step": "Then I should see \"Invalid email or password\""
-    }
-  ]
-}
-```
-
-The Hunter will investigate each failure (see Assignment 2 in Hunter's task definition) and the Sneak will audit any repairs (see Role A in Sneak's task definition). The Librarian will process any repaired specs that the Hunter delivers.
+The Runner has already sent `repair_needed` directly to the Hunter — repairs are already underway by the time the Lead receives `test_results`. The Sneak will automatically receive `spec_repair` messages from the Hunter and activate its Repair Audit role. The Librarian will process any repaired specs that the Hunter delivers.
 
 **Wait** for `repair_complete` from the Hunter and `repair_audit` from the Sneak.
 
@@ -196,10 +181,9 @@ After the Sneak produces gap specs, ask the operator:
 > The Sneak identified {N} testing gaps and created {M} new spec files. Would you like to run these additional specs through the browser? (Maximum 2 Sneak cycles)
 
 If **yes**:
-1. Wait for the Librarian to send `specs_ready` for the Sneak's gap specs (the Librarian is already processing them)
-2. Send a `run_specs` message to the Runner with only the new spec files
-3. The Runner's results will automatically go to the Scribe (who appends to the existing report) and the Sneak (who may identify further gaps)
-4. If this is cycle 1 of max 2, repeat Phase 4 with the Sneak's next gap analysis
+1. The Librarian is already processing the Sneak's gap specs and will send `run_specs` directly to the Runner once organized
+2. The Runner's results will automatically go to the Scribe (who appends to the existing report) and the Sneak (who may identify further gaps)
+3. If this is cycle 1 of max 2, repeat Phase 4 with the Sneak's next gap analysis
 
 If **no**: Proceed to presentation.
 
@@ -250,7 +234,7 @@ After all phases complete, present the final summary to the operator:
 After all phases are complete and the Presentation has been shown, the Lead validates every spec file in `browser-tests/specs/` using the validation script:
 
 ```bash
-find browser-tests/specs -name '*.feature' -exec bun {absolute path to this skill}/scripts/validate.js {} \;
+bun {absolute path to this skill}/scripts/validate.js $(find browser-tests/specs -name '*.feature')
 ```
 
 - If any files fail validation, read the file, fix common issues (missing Feature keyword, malformed tables, indentation), and re-validate.
@@ -265,7 +249,7 @@ find browser-tests/specs -name '*.feature' -exec bun {absolute path to this skil
 |-----------|---------|------|
 | Hunter    | blue    | Analyzes code, generates Gherkin specs; repairs stale specs after failures |
 | Librarian | green   | Organizes and saves specs |
-| Runner    | yellow  | Executes specs via browser MCP |
+| Runner    | yellow  | Executes specs concurrently via Playwright MCP subagents |
 | Scribe    | cyan    | Creates test reports |
 | Sneak     | magenta | Identifies gaps, generates additional specs; audits Hunter's repairs for hidden bugs |
 
@@ -273,6 +257,6 @@ find browser-tests/specs -name '*.feature' -exec bun {absolute path to this skil
 
 - If the Hunter produces no specs: Ask the operator for more context about what to test
 - If all specs fail validation: Check the guide reference path and report the issue to the operator
-- If the Runner cannot connect to the browser: Verify the base URL is correct and the application is running
+- If the Runner cannot connect to Playwright: Verify the Playwright MCP server is configured and the application is running at the base URL
 - If all scenarios fail: Check if the base URL is accessible, credentials are correct, and the application is in the expected state
 - If a teammate becomes unresponsive: Report to the operator and offer to retry that phase

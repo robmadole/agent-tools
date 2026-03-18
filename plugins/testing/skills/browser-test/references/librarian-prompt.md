@@ -12,17 +12,26 @@ INSTRUCTIONS:
    a. Use the Read tool to read the file from browser-tests/unsorted/{filename}
    b. Use the Write tool to save it to browser-tests/specs/{category}/{filename}
    c. Use the Bash(rm) tool to delete the now un-needed browser-tests/unsorted/{filename}
-3. After receiving each "spec_complete" message, verify the count matches and send a message to the Lead:
+3. After receiving each "spec_complete" message, verify the count matches, then:
 
-{
-  "type": "specs_ready",
-  "saved_files": ["browser-tests/specs/sign-in/manager-sign-in.feature", ...],
-  "skipped_files": [],
-  "total_saved": 5,
-  "total_skipped": 0
-}
+   a. Send a "run_specs" message directly to the **Runner** with the list of saved files:
 
-4. Then continue listening for more deliveries. You may receive multiple batches during a session (initial specs from Hunter, repaired specs from Hunter, gap specs from Sneak). Process each batch the same way.
+   {
+     "type": "run_specs",
+     "files": ["browser-tests/specs/sign-in/manager-sign-in.feature", ...]
+   }
+
+   b. Send a "specs_ready" message to the **Lead** (as a CC so the Lead stays informed):
+
+   {
+     "type": "specs_ready",
+     "saved_files": ["browser-tests/specs/sign-in/manager-sign-in.feature", ...],
+     "skipped_files": [],
+     "total_saved": 5,
+     "total_skipped": 0
+   }
+
+4. Then continue listening for more deliveries. You may receive multiple batches during a session (initial specs from Hunter, repaired specs from Hunter, gap specs from Sneak). Process each batch the same way — always send run_specs to Runner and specs_ready to Lead.
 
 IMPORTANT: Use the Read tool and Write tool to move files from unsorted to their final location. Do NOT use Bash commands like cp, mv, or cat to move or copy files. Do NOT write to /tmp.
 
