@@ -1,6 +1,6 @@
 ---
 name: browser-test
-description: "Orchestrate QA browser testing via Gherkin specs using Claude Agent Teams and agent-browser. Invoked via commands: /browser-test-setup, /browser-test-create, /browser-test-run."
+description: "Orchestrate QA browser testing via Gherkin specs using Claude Agent Teams and agent-browser."
 version: 1.1.0
 ---
 
@@ -31,6 +31,10 @@ Before proceeding, verify all of the following. If any check fails, stop immedia
 2. **agent-browser** — Verify that `agent-browser` is available by running `agent-browser --help`.
 
    > This skill requires the `agent-browser` CLI. Install it before running `/browser-test`.
+
+   Also verify that `Bash(agent-browser*)` is in the project's `.claude/settings.json` `permissions.allow` array. If it's missing, tell the operator:
+
+   > The `agent-browser` command needs to be allowed without prompting. Add `"Bash(agent-browser*)"` to `.claude/settings.json` permissions.allow.
 
 3. **Bun** — Verify that `bun` is available by running `bun --version`.
 
