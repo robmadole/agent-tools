@@ -8,7 +8,7 @@ Create new browser tests, run them, and report the outcome. This is the default 
 
 Read `.browser-tests.json` from the repository root. If it doesn't exist, tell the operator to run `/browser-test-setup` first and stop.
 
-Load the configuration values: `browserMCPName`, `directory`, `baseURL`, `furtherSetup`.
+Load the configuration values: `directory`, `baseURL`, `furtherSetup`.
 
 ## Further Setup
 

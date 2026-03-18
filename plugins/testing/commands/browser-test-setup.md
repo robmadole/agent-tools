@@ -12,11 +12,6 @@ Look for `.browser-tests.json` in the repository root. If it already exists, rea
 
 Ask the operator for the following:
 
-**Browser MCP** (required): Which browser MCP to use?
-- `chrome-devtools` — Chrome DevTools MCP tools (prefix: `mcp__chrome-devtools__`)
-- `vibium` — Vibium MCP tools (prefix: `mcp__vibium__`)
-- `playwright` — Playwright MCP tools (prefix: `mcp__playwright__`)
-
 **Base URL** (required): The base URL of the running application (e.g., `http://localhost:8080`).
 
 **Directory** (optional, default: `browser-tests`): The directory where specs and results are stored, relative to the repository root.
@@ -27,7 +22,6 @@ Create the configuration file at the repository root:
 
 ```json
 {
-  "browserMCPName": "<chrome-devtools|vibium|playwright>",
   "directory": "<directory>",
   "baseURL": "<base URL>",
   "furtherSetup": "<directory>/setup.md"

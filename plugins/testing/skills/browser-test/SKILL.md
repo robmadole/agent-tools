@@ -1,6 +1,6 @@
 ---
 name: browser-test
-description: "Orchestrate QA browser testing via Gherkin specs using Claude Agent Teams and Playwright MCP. Invoked via commands: /browser-test-setup, /browser-test-create, /browser-test-run."
+description: "Orchestrate QA browser testing via Gherkin specs using Claude Agent Teams and agent-browser. Invoked via commands: /browser-test-setup, /browser-test-create, /browser-test-run."
 version: 1.1.0
 ---
 
@@ -28,9 +28,9 @@ Before proceeding, verify both of the following. If either check fails, stop imm
 
    > This skill requires Agent Teams to function. Please enable Agent Teams before running `/browser-test`.
 
-2. **Playwright MCP** — Verify that `mcp__playwright__browser_navigate` (or any `mcp__playwright__*` tool) is available.
+2. **agent-browser** — Verify that `agent-browser` is available by running `agent-browser --help`.
 
-   > This skill requires the Playwright MCP server. Please add it to your MCP configuration before running `/browser-test`.
+   > This skill requires the `agent-browser` CLI. Install it before running `/browser-test`.
 
 3. **Bun** — Verify that `bun` is available by running `bun --version`.
 
@@ -249,7 +249,7 @@ bun {absolute path to this skill}/scripts/validate.js $(find browser-tests/specs
 |-----------|---------|------|
 | Hunter    | blue    | Analyzes code, generates Gherkin specs; repairs stale specs after failures |
 | Librarian | green   | Organizes and saves specs |
-| Runner    | yellow  | Executes specs concurrently via Playwright MCP subagents |
+| Runner    | yellow  | Executes specs concurrently via agent-browser subagents |
 | Scribe    | cyan    | Creates test reports |
 | Sneak     | magenta | Identifies gaps, generates additional specs; audits Hunter's repairs for hidden bugs |
 
@@ -257,6 +257,6 @@ bun {absolute path to this skill}/scripts/validate.js $(find browser-tests/specs
 
 - If the Hunter produces no specs: Ask the operator for more context about what to test
 - If all specs fail validation: Check the guide reference path and report the issue to the operator
-- If the Runner cannot connect to Playwright: Verify the Playwright MCP server is configured and the application is running at the base URL
+- If the Runner cannot connect to the browser: Verify `agent-browser` is installed and the application is running at the base URL
 - If all scenarios fail: Check if the base URL is accessible, credentials are correct, and the application is in the expected state
 - If a teammate becomes unresponsive: Report to the operator and offer to retry that phase

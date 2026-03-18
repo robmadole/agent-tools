@@ -8,19 +8,7 @@ Run existing browser test specs without creating new ones. Skips spec generation
 
 Read `.browser-tests.json` from the repository root. If it doesn't exist, tell the operator to run `/browser-test-setup` first and stop.
 
-Load the configuration values: `browserMCPName`, `directory`, `baseURL`, `furtherSetup`.
-
-## Confirm Browser Integration
-
-Before proceeding, confirm the browser integration with the operator:
-
-```
-Browser integration: {browserMCPName}
-
-Is this correct? (yes/change)
-```
-
-If the operator wants to change it, ask which browser MCP to use (chrome-devtools, vibium, or playwright) and use that for the remainder of the run.
+Load the configuration values: `directory`, `baseURL`, `furtherSetup`.
 
 ## Further Setup
 
@@ -58,15 +46,8 @@ Follow the browser-test skill (`skills/browser-test/SKILL.md`) with these modifi
 
 - **Skip Setup Phase entirely** — configuration comes from `.browser-tests.json`, specs are already identified above.
 - **Skip Phase 1 (Spec Generation)** — no Hunter or Librarian work needed for initial spec creation.
-- **Spawn only**: Runner(s), Scribe, and Sneak.
-- **Runner concurrency** — default to spawning **3 Runner instances** that execute specs in parallel. Before spawning, confirm with the operator:
-
-  ```
-  Spawning 3 Runners to execute specs concurrently. OK? (yes/change number)
-  ```
-
-  If the operator changes the number, use that instead. Divide the spec files roughly evenly across the Runner instances.
-- **Begin at Phase 2 (Execution)** — send `run_specs` to each Runner with its portion of the identified spec files.
+- **Spawn only**: Runner, Scribe, and Sneak. The Runner handles concurrency internally via subagents (see the Runner prompt for details).
+- **Begin at Phase 2 (Execution)** — send `run_specs` to the Runner with the identified spec files. The Runner will spawn subagents to execute feature files concurrently, each in its own isolated `agent-browser` session.
 - **Phase 2b (Spec Repair)** — if failures occur, spawn the Hunter at this point to investigate and repair. The Librarian is also spawned here if needed to organize repaired specs.
 - **Phase 3 (Reporting)**, **Phase 4 (Optional Re-run)**, **Presentation**, and **Final Validation** proceed as documented in the skill.
 
