@@ -65,6 +65,10 @@ done
 echo ""
 echo "deploy-skills: $created created, $uptodate up-to-date, $errors errors"
 
+if [ "$created" -gt 0 ]; then
+  git -C "$REPO_ROOT" add "$SKILLS_DIR"
+fi
+
 if [ "$errors" -gt 0 ]; then
   exit 1
 fi

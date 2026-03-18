@@ -82,6 +82,8 @@ with open(path, 'w') as f:
     f.write('\n')
 "
 
+  git -C "$REPO_ROOT" add "$plugin_json" "$MARKETPLACE"
+
   echo "bumped: $plugin_name $current_version -> $new_version"
   bumped=$((bumped + 1))
 done
