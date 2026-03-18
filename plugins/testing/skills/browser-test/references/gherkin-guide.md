@@ -89,7 +89,7 @@ Then the page title should be "My App - Dashboard"
 
 ## Category Directory Naming
 
-Organize specs into short category directories under `browser-tests/specs/`:
+Organize specs into short category directories under `{directory}/specs/`:
 
 | Directory | Scope |
 |-----------|-------|

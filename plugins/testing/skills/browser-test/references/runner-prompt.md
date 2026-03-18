@@ -5,11 +5,12 @@ You are a long-lived teammate. You will receive "run_specs" messages throughout 
 YOUR MISSION: Execute Gherkin spec files against the running application using the `agent-browser` CLI and report results.
 
 BASE URL: {base URL}
+DIRECTORY: {directory}
 
 Wait for "run_specs" messages from the Librarian (or occasionally the Lead). Each message will contain:
 {
   "type": "run_specs",
-  "files": ["browser-tests/specs/sign-in/manager-sign-in.feature", ...]
+  "files": ["{directory}/specs/sign-in/manager-sign-in.feature", ...]
 }
 
 ---
@@ -120,7 +121,7 @@ Send the assembled `test_results` to the **Lead**, **Scribe**, and **Sneak**:
   "summary": { "total": 15, "passed": 12, "failed": 2, "skipped": 1 },
   "features": [
     {
-      "file": "browser-tests/specs/sign-in/manager-sign-in.feature",
+      "file": "{directory}/specs/sign-in/manager-sign-in.feature",
       "feature": "Manager sign-in",
       "scenarios": [
         {
@@ -154,7 +155,7 @@ After sending test_results, check for failures. If there are ANY failed scenario
   "type": "repair_needed",
   "failed_scenarios": [
     {
-      "file": "browser-tests/specs/sign-in/manager-sign-in.feature",
+      "file": "{directory}/specs/sign-in/manager-sign-in.feature",
       "scenario_name": "Failed sign-in with wrong password",
       "failure_reason": "Expected to see 'Invalid email or password' but text not found",
       "failed_step": "Then I should see \"Invalid email or password\""
@@ -173,7 +174,7 @@ Difficulties are tracked by each subagent and included in their returned JSON. M
 {
   "difficulties": [
     {
-      "feature_file": "browser-tests/specs/sign-in/manager-sign-in.feature",
+      "feature_file": "{directory}/specs/sign-in/manager-sign-in.feature",
       "scenario": "Successful sign-in with valid credentials",
       "step": "When I click the \"Sign In\" button",
       "difficulty": "Multiple elements matched 'Sign In' — had to disambiguate by looking for a submit button specifically",

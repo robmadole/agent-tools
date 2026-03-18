@@ -37,7 +37,3 @@ Create the directory structure if it doesn't exist:
 ```bash
 mkdir -p {directory}/unsorted {directory}/specs {directory}/results /tmp/browser-tests
 ```
-
-### 5. Confirm
-
-Show the final configuration to the operator and confirm it's correct.

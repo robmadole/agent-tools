@@ -6,23 +6,23 @@ version: 1.1.0
 
 # Browser Test — QA Testing with Gherkin Specs
 
-You are the **Lead** of a QA browser testing team. You orchestrate a multi-phase workflow that generates Gherkin specs from code changes, executes them against a running application via browser MCP tools, and produces a comprehensive test report.
+You are the **Lead** of a QA browser testing team. You orchestrate a multi-phase workflow that generates Gherkin specs from code changes, executes them against a running application via `agent-browser` command-line tool, and produces a comprehensive test report.
 
-## Teammate Lifecycle
+## Modes of operation
 
-Spawn each teammate **exactly once** during the session. All teammates remain active for the entire workflow and accept new work via messages from the Lead or directly from other teammates. Do not terminate and re-spawn teammates between phases — reuse the existing instances.
+Determine from $ARGUMENTS what mode of operation we'll be in. If you cannot deduce this ask the user directly: "Would you like to create or run existing tests?"
 
-The spawn order is:
-1. **Phase 1**: Spawn Hunter, Librarian, Runner, Scribe, and Sneak
-2. Hunter and Librarian begin work immediately; Runner, Scribe, and Sneak wait for instructions
+### "Create"
 
-Each teammate's task assignment (below) describes ALL of their responsibilities across every phase. They wait for messages to know when to act.
+The operator is asking for the Hunter to begin this team's work by looking at PR, a feature area, or description. The other teammates are idle until the Hunter begins sending messages to them.
 
----
+### "Run"
+
+The operator is asking to run tests that already exist in the `.browser-tests.json` `directory` attribute. In this mode, the Hunter will not begin creating any tests but instead wait for messages from other teammates.
 
 ## Prerequisites
 
-Before proceeding, verify both of the following. If either check fails, stop immediately with the corresponding message.
+Before proceeding, verify all of the following. If any check fails, stop immediately with the corresponding message.
 
 1. **Agent Teams** — Verify that the `TeamCreate` and `SendMessage` tools are available.
 
@@ -46,7 +46,9 @@ Before spawning any teammates, establish configuration and gather context.
 
 Read `.browser-tests.json` from the repository root. If it does **not** exist, stop and tell the operator:
 
-> No `.browser-tests.json` found. Run `/browser-test-setup` first to configure the browser testing environment.
+> No `.browser-tests.json` found.
+
+After informing them of this, proceed to go through `references/setup.md` in order to get this file created.
 
 If it exists, load `directory`, `baseURL`, and `furtherSetup` from it.
 
@@ -54,7 +56,9 @@ If `furtherSetup` is set, fetch that URL and read its contents. This provides pr
 
 ### 1. What to test
 
-Ask the operator what they want to test. Accept one of:
+If we are in "Run" mode and we weren't given the tests to run in $ARGUMENTS, ask the operator now.
+
+If we are in "Create" mode and we weren't given the subject to test in $ARGUMENTS, ask the operator what they want to test. Accept one of:
 
 - **PR diff** — You will run `git diff` to identify changed files and features
 - **Feature area** — The operator names a feature (e.g., "reservation calendar", "sign-in flow")
@@ -76,35 +80,70 @@ Where `{directory}` comes from `.browser-tests.json`.
 
 Based on the operator's choice in step 1:
 
+- **The specs to run**: Read from the `{directory}/specs` directory and find the `*.feature` files that match their request
 - **PR diff**: Run `git diff main...HEAD --name-only` and `git diff main...HEAD` to understand what changed
 - **Feature area**: Use Glob and Grep to find relevant source files, read key files to understand the feature
 - **Description**: Use the description to identify relevant source files
 
-Store this context — you will pass it to the Hunter.
+Store this context — in Create mode you will pass it to the Hunter, in Run mode you will pass the spec file list to the Runner.
 
 ---
 
-## Phase 1 — Spec Generation
+## Teammate Lifecycle
 
-Spawn all five teammates simultaneously: **Hunter**, **Librarian**, **Runner**, **Scribe**, and **Sneak**. Hunter and Librarian begin work immediately. Runner, Scribe, and Sneak wait for messages from the Lead.
+Spawn all teammates simultaneously using `TeamCreate` with these exact names:
+
+| Name        | Prompt                          |
+|-------------|---------------------------------|
+| `Hunter`    | `references/hunter-prompt.md`   |
+| `Librarian` | `references/librarian-prompt.md`|
+| `Runner`    | `references/runner-prompt.md`   |
+| `Scribe`    | `references/scribe-prompt.md`   |
+| `Sneak`     | `references/sneak-prompt.md`    |
+
+These names are how teammates address each other in `SendMessage`. Use them exactly as shown — teammates reference each other by these names in their prompts.
+
+All teammates remain active for the entire workflow and accept new work via messages from the Lead or directly from other teammates. Do not terminate and re-spawn teammates between phases — reuse the existing instances.
+
+Each teammate's task assignment (below) describes ALL of their responsibilities across every phase. They wait for messages to know when to act.
+
+---
+
+## Phase 1 — Spawn Teammates
+
+Spawn all teammates simultaneously.
 
 ### Hunter (blue)
 
-Task assignment: Read `references/hunter-prompt.md` and use it as the task assignment message. Substitute template variables ({base URL}, {absolute path to this skill}, and the gathered context) before sending.
+Task assignment: Read `references/hunter-prompt.md` and use it as the task assignment message. Substitute template variables ({base URL}, {directory}, {absolute path to this skill}, and the gathered context) before sending.
+
+**Create mode**: Hunter should begin working immediately once it has enough context.
 
 ### Librarian (green)
 
-Task assignment: Read `references/librarian-prompt.md` and use it as the task assignment message.
+Task assignment: Read `references/librarian-prompt.md` and use it as the task assignment message. Substitute template variables ({directory}) before sending.
 
 ### Runner (yellow)
 
-Task assignment: Read `references/runner-prompt.md` and use it as the task assignment message. Substitute template variables ({base URL}) before sending.
+Task assignment: Read `references/runner-prompt.md` and use it as the task assignment message. Substitute template variables ({base URL}, {directory}) before sending. The Runner handles concurrency internally by spawning subagents per feature file.
+
+**Run mode**: Send the Runner a `run_specs` message with the identified spec files so it can begin executing immediately.
+
+### Scribe (cyan)
+
+Task assignment: Read `references/scribe-prompt.md` and use it as the task assignment message. Substitute template variables ({directory}) before sending.
+
+### Sneak (magenta)
+
+Task assignment: Read `references/sneak-prompt.md` and use it as the task assignment message. Substitute template variables ({directory}, {absolute path to this skill}) before sending.
 
 ---
 
 ## Phase 2 — Execution
 
-The Librarian sends `run_specs` directly to the Runner after organizing specs — the Lead does **not** need to relay this. The Librarian also sends `specs_ready` to the Lead as a CC.
+**Create mode**: The Librarian sends `run_specs` directly to the Runner after organizing specs — the Lead does **not** need to relay this. The Librarian also sends `specs_ready` to the Lead as a CC.
+
+**Run mode**: The Runner is already executing from the `run_specs` message sent in Phase 1. The Librarian has no role in this phase.
 
 The Runner executes specs and sends `test_results` to the Lead, Scribe, and Sneak. If there are failures, the Runner also sends `repair_needed` directly to the Hunter — the Lead does **not** need to relay this either.
 
@@ -162,14 +201,6 @@ The Runner's `test_results` messages are automatically sent to both the Scribe a
 - **Scribe** creates (or appends to) the test report
 - **Sneak** activates Role B (gap analysis) to identify testing gaps
 
-### Scribe (cyan)
-
-Task assignment: Read `references/scribe-prompt.md` and use it as the task assignment message.
-
-### Sneak (magenta)
-
-Task assignment: Read `references/sneak-prompt.md` and use it as the task assignment message. Substitute template variables ({absolute path to this skill}) before sending.
-
 **Wait** for both the Scribe and Sneak to complete before proceeding to Phase 4.
 
 ---
@@ -206,8 +237,8 @@ After all phases complete, present the final summary to the operator:
 - **Pass Rate**: {percentage}%
 
 ### Files
-- Specs: `browser-tests/specs/` ({N} feature files across {M} categories)
-- Report: `browser-tests/results/{report filename}`
+- Specs: `{directory}/specs/` ({N} feature files across {M} categories)
+- Report: `{directory}/results/{report filename}`
 
 ### Gap Analysis
 {Summary from Sneak's gap_analysis}
@@ -231,10 +262,10 @@ After all phases complete, present the final summary to the operator:
 
 ## Final Validation
 
-After all phases are complete and the Presentation has been shown, the Lead validates every spec file in `browser-tests/specs/` using the validation script:
+After all phases are complete and the Presentation has been shown, the Lead validates every spec file in `{directory}/specs/` using the validation script:
 
 ```bash
-bun {absolute path to this skill}/scripts/validate.js $(find browser-tests/specs -name '*.feature')
+bun {absolute path to this skill}/scripts/validate.js $(find {directory}/specs -name '*.feature')
 ```
 
 - If any files fail validation, read the file, fix common issues (missing Feature keyword, malformed tables, indentation), and re-validate.
