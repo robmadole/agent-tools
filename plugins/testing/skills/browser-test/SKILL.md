@@ -20,6 +20,14 @@ Each teammate's task assignment (below) describes ALL of their responsibilities 
 
 ---
 
+## Prerequisites
+
+**This skill requires Claude Agent Teams.** Before proceeding, verify that the `TeamCreate` and `SendMessage` tools are available. If they are not, stop immediately and tell the operator:
+
+> This skill requires Agent Teams to function. Please enable Agent Teams before running `/browser-test`.
+
+---
+
 ## Setup Phase
 
 Before spawning any teammates, establish configuration and gather context.
