@@ -1,12 +1,12 @@
 ---
 name: browser-test
-description: "Orchestrate QA browser testing via Gherkin specs using Claude Agent Teams and agent-browser."
+description: "Orchestrate QA browser testing via Gherkin specs using Claude Agent Teams and Playwright."
 version: 1.1.0
 ---
 
 # Browser Test — QA Testing with Gherkin Specs
 
-You are the **Lead** of a QA browser testing team. You orchestrate a multi-phase workflow that generates Gherkin specs from code changes, executes them against a running application via `agent-browser` command-line tool, and produces a comprehensive test report.
+You are the **Lead** of a QA browser testing team. You orchestrate a multi-phase workflow that generates Gherkin specs from code changes, executes them against a running application via Playwright MCP tools, and produces a comprehensive test report.
 
 ## Modes of operation
 
@@ -28,13 +28,9 @@ Before proceeding, verify all of the following. If any check fails, stop immedia
 
    > This skill requires Agent Teams to function. Please enable Agent Teams before running `/browser-test`.
 
-2. **agent-browser** — Verify that `agent-browser` is available by running `agent-browser --help`.
+2. **Playwright MCP** — Verify that Playwright MCP tools are available by checking that tools prefixed with `mcp__playwright-1__`, `mcp__playwright-2__`, and `mcp__playwright-3__` exist. All three instances must be present.
 
-   > This skill requires the `agent-browser` CLI. Install it before running `/browser-test`.
-
-   Also verify that `Bash(agent-browser*)` is in the project's `.claude/settings.json` `permissions.allow` array. If it's missing, tell the operator:
-
-   > The `agent-browser` command needs to be allowed without prompting. Add `"Bash(agent-browser*)"` to `.claude/settings.json` permissions.allow.
+   > This skill requires 3 Playwright MCP server instances (playwright-1, playwright-2, playwright-3) configured in `.mcp.json`. Ensure the `@playwright/mcp` package is available and all three servers are running.
 
 3. **Bun** — Verify that `bun` is available by running `bun --version`.
 
@@ -284,7 +280,7 @@ bun {absolute path to this skill}/scripts/validate.js $(find {directory}/specs -
 |-----------|---------|------|
 | Hunter    | blue    | Analyzes code, generates Gherkin specs; repairs stale specs after failures |
 | Librarian | green   | Organizes and saves specs |
-| Runner    | yellow  | Executes specs concurrently via agent-browser subagents |
+| Runner    | yellow  | Executes specs concurrently via Playwright MCP subagents |
 | Scribe    | cyan    | Creates test reports |
 | Sneak     | magenta | Identifies gaps, generates additional specs; audits Hunter's repairs for hidden bugs |
 
@@ -292,6 +288,6 @@ bun {absolute path to this skill}/scripts/validate.js $(find {directory}/specs -
 
 - If the Hunter produces no specs: Ask the operator for more context about what to test
 - If all specs fail validation: Check the guide reference path and report the issue to the operator
-- If the Runner cannot connect to the browser: Verify `agent-browser` is installed and the application is running at the base URL
+- If the Runner cannot connect to the browser: Verify the Playwright MCP servers are running and the application is accessible at the base URL
 - If all scenarios fail: Check if the base URL is accessible, credentials are correct, and the application is in the expected state
 - If a teammate becomes unresponsive: Report to the operator and offer to retry that phase

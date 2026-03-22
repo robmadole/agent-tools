@@ -30,27 +30,7 @@ Create the configuration file at the repository root:
 
 The `furtherSetup` property points to a `setup.md` file in the `{directory}` where tests are stored. This file documents project-specific testing context — things like test user credentials, seed data, special application states, or anything else that helps the Runner execute tests effectively. Default value is `{baseURL}/setup.md`.
 
-### 4. Configure permissions
-
-The Runner executes `agent-browser` commands frequently during test runs. To avoid repeated permission prompts, add it to the project's allow list.
-
-Check if `.claude/settings.json` exists. If it does, read it and merge. If not, create it.
-
-Add `"Bash(agent-browser*)"` to `permissions.allow`:
-
-```json
-{
-  "permissions": {
-    "allow": [
-      "Bash(agent-browser*)"
-    ]
-  }
-}
-```
-
-If the file already has a `permissions.allow` array, append to it — do not replace existing entries.
-
-### 5. Initialize directories
+### 4. Initialize directories
 
 Create the directory structure if it doesn't exist:
 
