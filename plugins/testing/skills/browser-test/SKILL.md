@@ -1,12 +1,14 @@
 ---
 name: browser-test
-description: "Orchestrate QA browser testing via Gherkin specs using Claude Agent Teams and Playwright."
-version: 1.1.0
+description: "Orchestrate QA browser testing via Gherkin specs and Playwright."
+version: 2.0.0
 ---
 
 # Browser Test — QA Testing with Gherkin Specs
 
-You are the **Lead** of a QA browser testing team. You orchestrate a multi-phase workflow that generates Gherkin specs from code changes, executes them against a running application via Playwright MCP tools, and produces a comprehensive test report.
+You orchestrate a multi-phase QA browser testing workflow. You generate Gherkin specs from code changes, execute them against a running application via Playwright MCP tools, and produce a comprehensive test report.
+
+You perform all roles directly — spec generation, reporting, gap analysis — and use **subagents only for concurrent test execution** (up to 3 Playwright instances in parallel).
 
 ## Modes of operation
 
@@ -14,33 +16,29 @@ Determine from $ARGUMENTS what mode of operation we'll be in. If you cannot dedu
 
 ### "Create"
 
-The operator is asking for the Hunter to begin this team's work by looking at PR, a feature area, or description. The other teammates are idle until the Hunter begins sending messages to them.
+The operator is asking you to generate new Gherkin specs by analyzing a PR, a feature area, or description — then execute them.
 
 ### "Run"
 
-The operator is asking to run tests that already exist in the `.browser-tests.json` `directory` attribute. In this mode, the Hunter will not begin creating any tests but instead wait for messages from other teammates.
+The operator is asking to run tests that already exist in the `.browser-tests.json` `directory` attribute.
 
 ## Prerequisites
 
 Before proceeding, verify all of the following. If any check fails, stop immediately with the corresponding message.
 
-1. **Agent Teams** — Verify that the `TeamCreate` and `SendMessage` tools are available.
-
-   > This skill requires Agent Teams to function. Please enable Agent Teams before running `/browser-test`.
-
-2. **Playwright MCP** — Verify that Playwright MCP tools are available by checking that tools prefixed with `mcp__playwright-1__`, `mcp__playwright-2__`, and `mcp__playwright-3__` exist. All three instances must be present.
+1. **Playwright MCP** — Verify that Playwright MCP tools are available by checking that tools prefixed with `mcp__playwright-1__`, `mcp__playwright-2__`, and `mcp__playwright-3__` exist. All three instances must be present.
 
    > This skill requires 3 Playwright MCP server instances (playwright-1, playwright-2, playwright-3) configured in `.mcp.json`. Ensure the `@playwright/mcp` package is available and all three servers are running.
 
-3. **Bun** — Verify that `bun` is available by running `bun --version`.
+2. **Bun** — Verify that `bun` is available by running `bun --version`.
 
    > This skill requires Bun to run the validation script. Install it from https://bun.sh before running `/browser-test`.
+
+3. **Agent tool** — Verify that the `Agent` tool is available (used for concurrent test execution and audit subagents).
 
 ---
 
 ## Setup Phase
-
-Before spawning any teammates, establish configuration and gather context.
 
 ### 0. Load configuration
 
@@ -52,7 +50,7 @@ After informing them of this, proceed to go through `references/setup.md` in ord
 
 If it exists, load `directory`, `baseURL`, and `furtherSetup` from it.
 
-If `furtherSetup` is set, fetch that URL and read its contents. This provides project-specific testing context (test credentials, seed data, application quirks) that should be passed to teammates — especially the Runner and Hunter.
+If `furtherSetup` is set, read that file (it is a path relative to the repository root). This provides project-specific testing context (test credentials, seed data, application quirks) that should be substituted into the runner subagent prompt and referenced during spec generation.
 
 ### 1. What to test
 
@@ -69,7 +67,7 @@ If we are in "Create" mode and we weren't given the subject to test in $ARGUMENT
 Create the following directories at the project root if they don't exist:
 
 ```bash
-mkdir -p {directory}/unsorted {directory}/specs {directory}/results /tmp/browser-tests
+mkdir -p {directory}/specs {directory}/results /tmp/browser-tests
 ```
 
 Where `{directory}` comes from `.browser-tests.json`.
@@ -85,140 +83,185 @@ Based on the operator's choice in step 1:
 - **Feature area**: Use Glob and Grep to find relevant source files, read key files to understand the feature
 - **Description**: Use the description to identify relevant source files
 
-Store this context — in Create mode you will pass it to the Hunter, in Run mode you will pass the spec file list to the Runner.
+Store this context — in Create mode you will use it for spec generation, in Run mode you will pass the spec file list to the execution phase.
 
 ---
 
-## Teammate Lifecycle
+## Phase 1 — Spec Generation (Create mode only)
 
-Spawn all teammates simultaneously using `TeamCreate` with these exact names:
+If in "Run" mode, skip to Phase 2.
 
-| Name        | Prompt                          |
-|-------------|---------------------------------|
-| `Hunter`    | `references/hunter-prompt.md`   |
-| `Librarian` | `references/librarian-prompt.md`|
-| `Runner`    | `references/runner-prompt.md`   |
-| `Scribe`    | `references/scribe-prompt.md`   |
-| `Sneak`     | `references/sneak-prompt.md`    |
+Read `references/gherkin-guide.md` before generating any specs.
 
-These names are how teammates address each other in `SendMessage`. Use them exactly as shown — teammates reference each other by these names in their prompts.
+Analyze the gathered context and generate Gherkin `.feature` files:
 
-All teammates remain active for the entire workflow and accept new work via messages from the Lead or directly from other teammates. Do not terminate and re-spawn teammates between phases — reuse the existing instances.
+1. Identify all testable behaviors from the context
+2. Group tests by category using the directory naming from the guide (sign-in/, navigation/, reservations/, etc.)
+3. Write `.feature` files following the step phrasing conventions exactly
+4. Save each file directly to `{directory}/specs/{category}/{filename}` — create category directories as needed
+5. Think about edge cases: empty states, validation errors, permission boundaries, navigation flows
 
-Each teammate's task assignment (below) describes ALL of their responsibilities across every phase. They wait for messages to know when to act.
+### Spec generation guidelines
 
----
-
-## Phase 1 — Spawn Teammates
-
-Spawn all teammates simultaneously.
-
-### Hunter (blue)
-
-Task assignment: Read `references/hunter-prompt.md` and use it as the task assignment message. Substitute template variables ({base URL}, {directory}, {absolute path to this skill}, and the gathered context) before sending.
-
-**Create mode**: Hunter should begin working immediately once it has enough context.
-
-### Librarian (green)
-
-Task assignment: Read `references/librarian-prompt.md` and use it as the task assignment message. Substitute template variables ({directory}) before sending.
-
-### Runner (yellow)
-
-Task assignment: Read `references/runner-prompt.md` and use it as the task assignment message. Substitute template variables ({base URL}, {directory}) before sending. The Runner handles concurrency internally by spawning subagents per feature file.
-
-**Run mode**: Send the Runner a `run_specs` message with the identified spec files so it can begin executing immediately.
-
-### Scribe (cyan)
-
-Task assignment: Read `references/scribe-prompt.md` and use it as the task assignment message. Substitute template variables ({directory}) before sending.
-
-### Sneak (magenta)
-
-Task assignment: Read `references/sneak-prompt.md` and use it as the task assignment message. Substitute template variables ({directory}, {absolute path to this skill}) before sending.
+- Aim for 3-8 feature files depending on scope
+- Each feature file should have 2-5 scenarios
+- Use Background for shared setup within a file
+- Keep scenarios under 10 steps
+- Use the exact step phrasing patterns from the guide
+- Do NOT include CSS selectors or implementation details in steps
+- Think from the user's perspective, not the developer's
 
 ---
 
-## Phase 2 — Execution
+## Phase 2 — Test Execution
 
-**Create mode**: The Librarian sends `run_specs` directly to the Runner after organizing specs — the Lead does **not** need to relay this. The Librarian also sends `specs_ready` to the Lead as a CC.
+Execute the spec files using concurrent subagents with Playwright MCP.
 
-**Run mode**: The Runner is already executing from the `run_specs` message sent in Phase 1. The Librarian has no role in this phase.
+### Determine files to run
 
-The Runner executes specs and sends `test_results` to the Lead, Scribe, and Sneak. If there are failures, the Runner also sends `repair_needed` directly to the Hunter — the Lead does **not** need to relay this either.
+- **Create mode**: All `.feature` files just written to `{directory}/specs/`
+- **Run mode**: Files identified in setup phase
+- **Re-run** (from Phase 2b or Phase 4): Only the specific files passed back
 
-**Wait** for the Runner to send `test_results` before proceeding.
+### Concurrent execution via subagents
 
-If there are **any failures**, proceed to Phase 2b — Spec Repair. If all scenarios passed, skip to Phase 3 — Reporting.
+There are 3 Playwright MCP server instances available: `playwright-1`, `playwright-2`, and `playwright-3`. Execute feature files concurrently by spawning one `Agent` subagent per feature file.
+
+1. Batch the files into groups of up to 3
+2. For each batch, spawn up to 3 `Agent` subagents **concurrently** (in a single message with multiple tool calls)
+3. Assign each subagent a distinct Playwright instance: 1st → `playwright-1`, 2nd → `playwright-2`, 3rd → `playwright-3`
+4. For each subagent: read `references/runner-prompt.md` and substitute the template variables:
+   - `{base URL}` — from configuration
+   - `{file path}` — the feature file to execute
+   - `{playwright instance}` — the assigned instance name
+   - `{further setup}` — the furtherSetup content (or empty if not set)
+5. Wait for all subagents in the batch to complete before starting the next batch
+6. Collect JSON results from all subagents
+
+### Result assembly
+
+After all subagents complete, assemble combined results:
+
+1. Merge all subagent results into a single results object
+2. Calculate summary totals across all features:
+   ```json
+   { "total": 15, "passed": 12, "failed": 2, "skipped": 1 }
+   ```
+3. Combine all difficulties into a single array, adding `feature_file` to each entry
+
+If there are **any failures**, proceed to Phase 2b. Otherwise skip to Phase 3.
 
 ---
 
 ## Phase 2b — Spec Repair
 
-The Runner has already sent `repair_needed` directly to the Hunter — repairs are already underway by the time the Lead receives `test_results`. The Sneak will automatically receive `spec_repair` messages from the Hunter and activate its Repair Audit role. The Librarian will process any repaired specs that the Hunter delivers.
+### Repair analysis
 
-**Wait** for `repair_complete` from the Hunter and `repair_audit` from the Sneak.
+For each failed scenario:
 
-### Lead — Repair Decision Point
+1. Read the original `.feature` file from `{directory}/specs/{category}/{filename}`
+2. Read the relevant source code to understand the current application behavior
+3. Determine the cause:
+   - **STALE SPEC**: The application behavior changed legitimately and the spec needs updating
+   - **POSSIBLE BUG**: The application behavior seems wrong — the spec's expectation looks correct
+   - **ENVIRONMENT ISSUE**: Timing, missing data, or test environment problems
 
-After receiving `repair_complete` from Hunter and `repair_audit` from Sneak:
+For each **STALE SPEC**:
+- Update the file in-place at `{directory}/specs/{category}/{filename}`
+- Record what changed and why (original expectation, new expectation, evidence from source code)
 
-1. **If Sneak found suspected bugs or needs-operator-input items**: Present them to the operator:
+For each **POSSIBLE BUG**:
+- Do NOT update the spec
+- Collect for operator presentation
 
-> The Hunter updated {N} specs to match current behavior, but the Sneak flagged {M} potential issues:
+For **ENVIRONMENT ISSUES**: Note them but take no action.
+
+### Independent audit
+
+After completing all repairs, spawn a single `Agent` subagent to audit your changes. Read `references/auditor-prompt.md` and substitute the `{repairs}` template variable with the list of repairs you made. For each repair, include:
+- The spec file path (original location)
+- The scenario name
+- What you changed and why
+- The source code evidence you cited
+
+Wait for the auditor's JSON findings before proceeding.
+
+### Operator decision point
+
+After receiving audit findings:
+
+1. **If the auditor found suspected bugs or needs-operator-input items**: Present them to the operator:
+
+> The spec repairs were audited and {M} potential issues were flagged:
 >
-> {For each suspected_bug or needs_operator_input finding, show the scenario, the Hunter's change, and the Sneak's reasoning}
+> {For each suspected_bug or needs_operator_input finding, show the scenario, the repair, and the auditor's reasoning}
 >
 > For each flagged item, would you like to:
 > a) **Accept the update** — the behavior change is intentional
 > b) **Keep the original spec** — this is a bug that should be fixed
 > c) **Skip this scenario** — remove it from testing for now
 
-2. **If Hunter found suspected bugs**: Present them to the operator:
+2. **If you found possible bugs during repair**: Present them to the operator:
 
-> The Hunter identified {N} scenarios that appear to be application bugs rather than stale specs:
+> {N} scenarios appear to be application bugs rather than stale specs:
 >
-> {For each suspected_bug, show the scenario, expected vs. actual behavior, and evidence}
+> {For each possible bug, show the scenario, expected vs. actual behavior, and evidence}
 >
 > These specs were NOT updated. Would you like to:
 > a) **Continue testing** — proceed with remaining passing specs and repaired specs
 > b) **Stop here** — investigate the bugs before continuing
 
 3. **After operator decisions**:
-   - For accepted repairs: The Librarian should already have the updated files from the Hunter's deliveries
-   - For rejected repairs (keep original): No action needed, original specs remain
-   - Send a `run_specs` message to the Runner with ONLY the repaired spec files to verify the fixes work
+   - For accepted repairs: Files are already updated
+   - For rejected repairs (keep original): Revert the spec file to its original content
+   - Re-run ONLY the repaired spec files through Phase 2 to verify the fixes work
    - After the re-run, proceed to Phase 3
 
-If there were **no suspected bugs** from either Hunter or Sneak and all repairs were legitimate, send a `run_specs` message to the Runner with the repaired specs, then proceed to Phase 3.
+If there were **no suspected bugs** from either the repair analysis or the auditor and all repairs were legitimate, re-run the repaired specs through Phase 2, then proceed to Phase 3.
 
 ---
 
 ## Phase 3 — Reporting
 
-The Runner's `test_results` messages are automatically sent to both the Scribe and Sneak. After the Runner completes (or after Phase 2b re-run if repairs were needed), both are already working:
+Read `references/report-template.md` and create (or update) the test report following that format.
 
-- **Scribe** creates (or appends to) the test report
-- **Sneak** activates Role B (gap analysis) to identify testing gaps
-
-**Wait** for both the Scribe and Sneak to complete before proceeding to Phase 4.
+- Determine the run number from existing files in `{directory}/results/`
+- Create the report at `{directory}/results/{YYYY-MM-DD}-run-{N}.md`
+- For subsequent runs (repair re-runs, gap specs), append to the same report file and update the cumulative summary
 
 ---
 
-## Phase 4 — Optional Re-run
+## Phase 4 — Gap Analysis
 
-After the Sneak produces gap specs, ask the operator:
+Analyze the test results and existing specs to identify testing gaps:
 
-> The Sneak identified {N} testing gaps and created {M} new spec files. Would you like to run these additional specs through the browser? (Maximum 2 Sneak cycles)
+1. Review all results — which behaviors are covered, which are missing?
+2. Identify gaps in these priority categories:
+   - **Error paths** — network errors, permission denied, session timeout, validation failures
+   - **Edge cases** — empty states, boundary values, special characters, long inputs
+   - **Related features** — if testing sign-in, what about sign-out? password reset?
+   - **Interaction patterns** — keyboard navigation, mobile viewport, rapid actions
+3. Write up to 4 new `.feature` files directly to `{directory}/specs/{category}/`
+4. Follow the same guidelines from Phase 1
+
+### Optional execution
+
+Present gaps to the operator:
+
+> Identified {N} testing gaps and created {M} new spec files:
+>
+> {For each gap, show category, description, and spec file}
+>
+> Would you like to run these additional specs? (Maximum 2 gap analysis cycles)
 
 If **yes**:
-1. The Librarian is already processing the Sneak's gap specs and will send `run_specs` directly to the Runner once organized
-2. The Runner's results will automatically go to the Scribe (who appends to the existing report) and the Sneak (who may identify further gaps)
-3. If this is cycle 1 of max 2, repeat Phase 4 with the Sneak's next gap analysis
+1. Execute the new spec files through Phase 2
+2. Append results to the existing report (Phase 3)
+3. If this is cycle 1 of max 2, repeat Phase 4
 
 If **no**: Proceed to presentation.
 
-Track the cycle count. Do not allow more than 2 Sneak cycles total.
+Track the cycle count. Do not allow more than 2 gap analysis cycles total.
 
 ---
 
@@ -241,12 +284,12 @@ After all phases complete, present the final summary to the operator:
 - Report: `{directory}/results/{report filename}`
 
 ### Gap Analysis
-{Summary from Sneak's gap_analysis}
+{Summary of gaps identified and new specs created}
 
 ### Difficulties
-{If the Runner reported any difficulties, summarize them here:}
+{If any difficulties were reported, summarize them here:}
 - **{N} friction points** encountered during execution
-- Top suggestions: {list the most impactful suggestions from the Runner's difficulties}
+- Top suggestions: {list the most impactful suggestions from difficulties}
 - See the full report for details
 
 {If no difficulties were reported, omit this section.}
@@ -262,7 +305,7 @@ After all phases complete, present the final summary to the operator:
 
 ## Final Validation
 
-After all phases are complete and the Presentation has been shown, the Lead validates every spec file in `{directory}/specs/` using the validation script:
+After all phases are complete and the Presentation has been shown, validate every spec file in `{directory}/specs/` using the validation script:
 
 ```bash
 bun {absolute path to this skill}/scripts/validate.js $(find {directory}/specs -name '*.feature')
@@ -274,20 +317,10 @@ bun {absolute path to this skill}/scripts/validate.js $(find {directory}/specs -
 
 ---
 
-## Teammate Color Reference
-
-| Teammate  | Color   | Role |
-|-----------|---------|------|
-| Hunter    | blue    | Analyzes code, generates Gherkin specs; repairs stale specs after failures |
-| Librarian | green   | Organizes and saves specs |
-| Runner    | yellow  | Executes specs concurrently via Playwright MCP subagents |
-| Scribe    | cyan    | Creates test reports |
-| Sneak     | magenta | Identifies gaps, generates additional specs; audits Hunter's repairs for hidden bugs |
-
 ## Error Handling
 
-- If the Hunter produces no specs: Ask the operator for more context about what to test
+- If no specs are generated in Phase 1: Ask the operator for more context about what to test
 - If all specs fail validation: Check the guide reference path and report the issue to the operator
-- If the Runner cannot connect to the browser: Verify the Playwright MCP servers are running and the application is accessible at the base URL
+- If a subagent fails to return results: Report the failure to the operator and offer to retry that feature file individually
 - If all scenarios fail: Check if the base URL is accessible, credentials are correct, and the application is in the expected state
-- If a teammate becomes unresponsive: Report to the operator and offer to retry that phase
+- If the application is not accessible: Verify the base URL from `.browser-tests.json` and ask the operator to confirm the application is running

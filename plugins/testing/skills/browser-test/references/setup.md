@@ -28,12 +28,12 @@ Create the configuration file at the repository root:
 }
 ```
 
-The `furtherSetup` property points to a `setup.md` file in the `{directory}` where tests are stored. This file documents project-specific testing context — things like test user credentials, seed data, special application states, or anything else that helps the Runner execute tests effectively. Default value is `{baseURL}/setup.md`.
+The `furtherSetup` property is a path (relative to the repository root) to a file that documents project-specific testing context — things like test user credentials, seed data, special application states, or anything else that helps execute tests effectively.
 
 ### 4. Initialize directories
 
 Create the directory structure if it doesn't exist:
 
 ```bash
-mkdir -p {directory}/unsorted {directory}/specs {directory}/results /tmp/browser-tests
+mkdir -p {directory}/specs {directory}/results /tmp/browser-tests
 ```
