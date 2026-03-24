@@ -7,7 +7,11 @@ A [Claude Code](https://claude.ai/code) plugin marketplace package providing tes
 In Claude Code:
 
 ```
-/plugin marketplace add robmadole/agent-tools
+claude plugin marketplace add robmadole/agent-tools
+```
+
+```
+claude plugin install testing@agent-tools
 ```
 
 Using open agent skills (for other Agents):
