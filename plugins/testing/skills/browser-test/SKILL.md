@@ -133,7 +133,20 @@ If any `@testdata` lines are found:
 2. **Execute each `@testdata` line in order** using the Bash tool, following the instructions from the furtherSetup file. Each line's content (after the `@testdata ` prefix) is the command arguments.
 3. **Capture the JSON output** from each command's stdout.
 4. **Build a variable scope** from the JSON output. Top-level keys from each command's JSON become `$key_name` variables. Later `@testdata` lines should have `$variable` references replaced with values from earlier outputs before execution.
-5. **Pass the accumulated context** (created data, credentials, IDs) into the runner subagent prompt as additional setup context so the runner can use them when interpreting Background and Given steps.
+5. **Build a human-readable testdata context block** for the runner. For each `@testdata` command that was executed, summarize its output in plain language that helps the runner interpret generic steps. Label each entity with its role or purpose, and include credentials where applicable. For example:
+
+   ```
+   TEST DATA (created by @testdata before this feature):
+
+   Command: create location "Test Camp" --with-admin
+   - Location name: "Test Camp" (id: abc-123, slug: test-camp)
+   - Admin manager: admin-1711234567-1234@test.local, password: "password"
+
+   Command: create guest
+   - Guest account: guest-1711234568-5678@test.local, password: "password"
+   ```
+
+   The runner uses this context to resolve generic references in steps. For example, when a step says "the admin manager email" or "the guest email", the runner looks up the corresponding value from this block. When a step says "I am signed in as the admin manager", the runner uses the email and password from here.
 
 If a `@testdata` command fails (non-zero exit), stop processing that feature file, report the error, and skip it.
 

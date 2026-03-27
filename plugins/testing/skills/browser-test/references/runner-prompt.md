@@ -30,6 +30,7 @@ GUIDELINES:
 - Use appropriate waits after navigation and form submissions
 - Retry once if the page seems to still be loading
 - Save any temporary files (screenshots, test fixtures) to /tmp/browser-tests/ — never to the project directory
+- Steps may use generic references like "the admin manager email", "the guest email", "the admin manager", etc. Resolve these from the TEST DATA block below — it contains the actual values (emails, passwords, IDs) created for this test run. If a step says to fill in a field "with the X email", look up that entity's email from the test data. If a step says "signed in as the X", use that entity's credentials.
 
 {further setup}
 
