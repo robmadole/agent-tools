@@ -123,6 +123,22 @@ Execute the spec files using concurrent subagents with Playwright MCP.
 - **Run mode**: Files identified in setup phase
 - **Re-run** (from Phase 2b or Phase 4): Only the specific files passed back
 
+### Process @testdata tags
+
+Before dispatching feature files to runners, check each file for `@testdata` lines. These are lines starting with `@testdata` that appear before the `Feature:` keyword.
+
+If any `@testdata` lines are found:
+
+1. **Consult the furtherSetup file** for instructions on how to execute `@testdata` commands. The furtherSetup file (from `.browser-tests.json`) contains project-specific details: what tool to run, how to invoke it, and where it executes (e.g., inside a container).
+2. **Execute each `@testdata` line in order** using the Bash tool, following the instructions from the furtherSetup file. Each line's content (after the `@testdata ` prefix) is the command arguments.
+3. **Capture the JSON output** from each command's stdout.
+4. **Build a variable scope** from the JSON output. Top-level keys from each command's JSON become `$key_name` variables. Later `@testdata` lines should have `$variable` references replaced with values from earlier outputs before execution.
+5. **Pass the accumulated context** (created data, credentials, IDs) into the runner subagent prompt as additional setup context so the runner can use them when interpreting Background and Given steps.
+
+If a `@testdata` command fails (non-zero exit), stop processing that feature file, report the error, and skip it.
+
+If no `@testdata` lines are present, proceed normally.
+
 ### Concurrent execution via subagents
 
 There are 3 Playwright MCP server instances available: `playwright-1`, `playwright-2`, and `playwright-3`. Execute feature files concurrently by spawning one `Agent` subagent per feature file.
@@ -135,6 +151,7 @@ There are 3 Playwright MCP server instances available: `playwright-1`, `playwrig
    - `{file path}` — the feature file to execute
    - `{playwright instance}` — the assigned instance name
    - `{further setup}` — the furtherSetup content (or empty if not set)
+   - `{testdata context}` — if this file had `@testdata` tags, include the resolved data (IDs, credentials, etc.) as a "TEST DATA" block the runner can reference when interpreting steps. If no `@testdata` tags were present, substitute with empty string.
 5. Wait for all subagents in the batch to complete before starting the next batch
 6. Collect JSON results from all subagents
 

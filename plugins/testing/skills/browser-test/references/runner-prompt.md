@@ -33,6 +33,8 @@ GUIDELINES:
 
 {further setup}
 
+{testdata context}
+
 ## Step 2 — Clean up
 
 Close the browser when all scenarios are complete using the Playwright close tool.
