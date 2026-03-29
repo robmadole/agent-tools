@@ -7,6 +7,7 @@ Gherkin is a structured language for describing software behavior in plain Engli
 ### File Structure
 
 ```gherkin
+@testdata create location "Test Camp" --with-admin
 Feature: Short feature description
   Optional multi-line description of the feature.
   Can span several lines.
@@ -29,6 +30,53 @@ Feature: Short feature description
       | login | email    | user@ex.co | Welcome         |
       | login | email    | invalid    | Invalid email   |
 ```
+
+### @testdata Tags
+
+Every feature file **must** declare its test data requirements using `@testdata` lines before the `Feature:` keyword. These lines tell the test harness what data to create before running scenarios.
+
+#### Syntax
+
+Each `@testdata` line contains a command (without any tool/mix prefix). Later lines can reference `$variable_name` values from earlier command outputs using variable interpolation.
+
+```gherkin
+@testdata create location "Test Camp" --with-admin
+@testdata create booking-season $location_id
+@testdata create base-price $location_id
+@testdata create charging-policy $location_id
+Feature: Guest reservation booking
+```
+
+#### When to use which pattern
+
+| Pattern | When to use |
+|---------|-------------|
+| `@testdata exemplar default` | Tests that need a fully populated location with site groups, sites, images, and multiple manager roles. Most management UI tests (tables, filters, images, navigation). |
+| `@testdata create location "Name" --with-admin` | Tests that only need a location and an admin manager. Simpler tests like sign-in, error states, permissions. |
+| `@testdata create location "Name" --with-admin` + chained commands | Tests that need reservation infrastructure (booking seasons, pricing, charging policies) — typically guest-facing reservation flows. |
+| `@testdata create guest` | Tests that need a standalone guest account (not tied to a reservation). |
+
+#### Chained commands with variable references
+
+The JSON output from each command is flattened into a variable scope. Top-level keys become `$key_name` variables for subsequent lines.
+
+```gherkin
+@testdata create location "Test Camp" --with-admin
+@testdata create booking-season $location_id
+@testdata create base-price $location_id
+@testdata create charging-policy $location_id
+@testdata create guest
+Feature: Guest info page for authenticated guests
+```
+
+#### Choosing the right test data
+
+Think about what each scenario **actually needs**:
+
+- **Viewing/managing site groups, images, tables, filters?** → `exemplar default` (needs populated data)
+- **Sign-in, sign-out, error redirects?** → `create location` with `--with-admin` (just needs credentials)
+- **Guest reservation flows?** → `create location` + booking-season + base-price + charging-policy (needs pricing infrastructure)
+- **Guest account behavior?** → Add `create guest` for a standalone guest account
 
 ### Keywords
 
@@ -140,6 +188,7 @@ Good: `Then I should see "results"` or `Then I should see at least 1 "result" it
 ## Example Feature File
 
 ```gherkin
+@testdata create location "Test Camp" --with-admin
 Feature: Manager sign-in
   Managers should be able to sign in with their email and password
   to access the management dashboard.
@@ -148,14 +197,14 @@ Feature: Manager sign-in
     Given I am on the "Sign In" page
 
   Scenario: Successful sign-in with valid credentials
-    When I fill in "Email" with "manager@example.com"
+    When I fill in "Email" with the admin manager email
     And I fill in "Password" with "password"
     And I click the "Sign in" button
     Then I should be on the "Dashboard" page
-    And I should see "Acme Corp"
+    And I should see "Test Camp"
 
   Scenario: Failed sign-in with wrong password
-    When I fill in "Email" with "manager@example.com"
+    When I fill in "Email" with the admin manager email
     And I fill in "Password" with "wrongpassword"
     And I click the "Sign in" button
     Then I should see "Invalid email or password"

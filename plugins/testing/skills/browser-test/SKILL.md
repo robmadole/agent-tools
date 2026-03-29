@@ -110,6 +110,7 @@ Analyze the gathered context and generate Gherkin `.feature` files:
 - Use the exact step phrasing patterns from the guide
 - Do NOT include CSS selectors or implementation details in steps
 - Think from the user's perspective, not the developer's
+- **Every feature file must have `@testdata` tags** — Determine what test data each feature needs and prepend the appropriate `@testdata` lines before the `Feature:` keyword. Consult the `@testdata` section of the gherkin guide and the furtherSetup file for available commands. Choose the lightest data setup that satisfies the scenarios (e.g., don't use `exemplar default` when `create location` suffices).
 
 ---
 
