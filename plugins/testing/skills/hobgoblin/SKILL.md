@@ -107,7 +107,9 @@ If one variant is overwhelmingly more common (used in 80%+ of files), note this:
 
 Do NOT decide for the operator. Even if one choice seems obviously better, present it neutrally. The one exception: if a prior memory decision covers this case, note the established convention instead of asking.
 
-Wait for the operator to respond to each decision (or batch their responses). They may:
+Present each inconsistency **one at a time** using the `AskUserQuestion` tool. Do not batch them. The operator needs space to think about each decision individually. After receiving the answer, save the decision to memory (Step 6) before moving to the next inconsistency.
+
+The operator may respond with:
 
 - Pick a variant (A, B, etc.)
 - Say "skip" to leave it inconsistent intentionally
@@ -151,7 +153,7 @@ Quote style (single vs double) in HEEx templates is not enforced — both are ac
 **How to apply:** Do not flag quote style differences in HEEx templates during future hobgoblin runs.
 ```
 
-## Step 7 — Generate Work Items List
+## Step 7 — Generate Work Items and Ask Where They Go
 
 Produce a final work items list containing every inconsistency where the operator chose a standard (not skipped). Each work item should be actionable:
 
@@ -168,9 +170,11 @@ Produce a final work items list containing every inconsistency where the operato
 - [ ] ...
 ```
 
-Save this list to a file the operator can reference later. Suggest a path like `hobgoblin-work-items.md` in the project root or a location the operator prefers.
-
 Summarize the totals: "X work items across Y files in Z comparison areas."
+
+Then use `AskUserQuestion` to ask: **"What would you like to do with this?"**
+
+Do whatever the operator asks.
 
 ## Important Constraints
 
