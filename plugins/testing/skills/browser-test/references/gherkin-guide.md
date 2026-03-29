@@ -7,8 +7,9 @@ Gherkin is a structured language for describing software behavior in plain Engli
 ### File Structure
 
 ```gherkin
-@testdata create location "Test Camp" --with-admin
 Feature: Short feature description
+  testdata: create location "Test Camp" --with-admin
+
   Optional multi-line description of the feature.
   Can span several lines.
 
@@ -31,42 +32,46 @@ Feature: Short feature description
       | login | email    | invalid    | Invalid email   |
 ```
 
-### @testdata Tags
+### testdata Directives
 
-Every feature file **must** declare its test data requirements using `@testdata` lines before the `Feature:` keyword. These lines tell the test harness what data to create before running scenarios.
+Every feature file **must** declare its test data requirements using `testdata:` lines in the feature description (after the `Feature:` keyword, indented with 2 spaces). These lines tell the test harness what data to create before running scenarios.
 
 #### Syntax
 
-Each `@testdata` line contains a command (without any tool/mix prefix). Later lines can reference `$variable_name` values from earlier command outputs using variable interpolation.
+Each `testdata:` line contains a command (without any tool/mix prefix). Later lines can reference `$variable_name` values from earlier command outputs using variable interpolation. A blank line separates the directives from the rest of the feature description.
 
 ```gherkin
-@testdata create location "Test Camp" --with-admin
-@testdata create booking-season $location_id
-@testdata create base-price $location_id
-@testdata create charging-policy $location_id
 Feature: Guest reservation booking
+  testdata: create location "Test Camp" --with-admin
+  testdata: create booking-season $location_id
+  testdata: create base-price $location_id
+  testdata: create charging-policy $location_id
+
+  Description of the feature goes here.
 ```
 
 #### When to use which pattern
 
 | Pattern | When to use |
 |---------|-------------|
-| `@testdata exemplar default` | Tests that need a fully populated location with site groups, sites, images, and multiple manager roles. Most management UI tests (tables, filters, images, navigation). |
-| `@testdata create location "Name" --with-admin` | Tests that only need a location and an admin manager. Simpler tests like sign-in, error states, permissions. |
-| `@testdata create location "Name" --with-admin` + chained commands | Tests that need reservation infrastructure (booking seasons, pricing, charging policies) — typically guest-facing reservation flows. |
-| `@testdata create guest` | Tests that need a standalone guest account (not tied to a reservation). |
+| `testdata: exemplar default` | Tests that need a fully populated location with site groups, sites, images, and multiple manager roles. Most management UI tests (tables, filters, images, navigation). |
+| `testdata: create location "Name" --with-admin` | Tests that only need a location and an admin manager. Simpler tests like sign-in, error states, permissions. |
+| `testdata: create location "Name" --with-admin` + chained commands | Tests that need reservation infrastructure (booking seasons, pricing, charging policies) — typically guest-facing reservation flows. |
+| `testdata: create guest` | Tests that need a standalone guest account (not tied to a reservation). |
 
 #### Chained commands with variable references
 
 The JSON output from each command is flattened into a variable scope. Top-level keys become `$key_name` variables for subsequent lines.
 
 ```gherkin
-@testdata create location "Test Camp" --with-admin
-@testdata create booking-season $location_id
-@testdata create base-price $location_id
-@testdata create charging-policy $location_id
-@testdata create guest
 Feature: Guest info page for authenticated guests
+  testdata: create location "Test Camp" --with-admin
+  testdata: create booking-season $location_id
+  testdata: create base-price $location_id
+  testdata: create charging-policy $location_id
+  testdata: create guest
+
+  An authenticated guest should see a full reservation summary.
 ```
 
 #### Choosing the right test data
@@ -188,8 +193,9 @@ Good: `Then I should see "results"` or `Then I should see at least 1 "result" it
 ## Example Feature File
 
 ```gherkin
-@testdata create location "Test Camp" --with-admin
 Feature: Manager sign-in
+  testdata: create location "Test Camp" --with-admin
+
   Managers should be able to sign in with their email and password
   to access the management dashboard.
 

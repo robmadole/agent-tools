@@ -110,7 +110,7 @@ Analyze the gathered context and generate Gherkin `.feature` files:
 - Use the exact step phrasing patterns from the guide
 - Do NOT include CSS selectors or implementation details in steps
 - Think from the user's perspective, not the developer's
-- **Every feature file must have `@testdata` tags** — Determine what test data each feature needs and prepend the appropriate `@testdata` lines before the `Feature:` keyword. Consult the `@testdata` section of the gherkin guide and the furtherSetup file for available commands. Choose the lightest data setup that satisfies the scenarios (e.g., don't use `exemplar default` when `create location` suffices).
+- **Every feature file must have `testdata:` directives** — Determine what test data each feature needs and add the appropriate `testdata:` lines in the feature description (after the `Feature:` keyword, indented with 2 spaces). Consult the `testdata:` section of the gherkin guide and the furtherSetup file for available commands. Choose the lightest data setup that satisfies the scenarios (e.g., don't use `exemplar default` when `create location` suffices).
 
 ---
 
@@ -124,20 +124,20 @@ Execute the spec files using concurrent subagents with Playwright MCP.
 - **Run mode**: Files identified in setup phase
 - **Re-run** (from Phase 2b or Phase 4): Only the specific files passed back
 
-### Process @testdata tags
+### Process testdata directives
 
-Before dispatching feature files to runners, check each file for `@testdata` lines. These are lines starting with `@testdata` that appear before the `Feature:` keyword.
+Before dispatching feature files to runners, check each file for `testdata:` directives. These are lines starting with `testdata:` (with leading whitespace) in the feature description block (between the `Feature:` line and the first `Background:` or `Scenario:`).
 
-If any `@testdata` lines are found:
+If any `testdata:` lines are found:
 
-1. **Consult the furtherSetup file** for instructions on how to execute `@testdata` commands. The furtherSetup file (from `.browser-tests.json`) contains project-specific details: what tool to run, how to invoke it, and where it executes (e.g., inside a container).
-2. **Execute each `@testdata` line in order** using the Bash tool, following the instructions from the furtherSetup file. Each line's content (after the `@testdata ` prefix) is the command arguments.
+1. **Consult the furtherSetup file** for instructions on how to execute testdata commands. The furtherSetup file (from `.browser-tests.json`) contains project-specific details: what tool to run, how to invoke it, and where it executes (e.g., inside a container).
+2. **Execute each `testdata:` line in order** using the Bash tool, following the instructions from the furtherSetup file. Each line's content (after the `testdata: ` prefix, trimmed) is the command arguments.
 3. **Capture the JSON output** from each command's stdout.
-4. **Build a variable scope** from the JSON output. Top-level keys from each command's JSON become `$key_name` variables. Later `@testdata` lines should have `$variable` references replaced with values from earlier outputs before execution.
-5. **Build a human-readable testdata context block** for the runner. For each `@testdata` command that was executed, summarize its output in plain language that helps the runner interpret generic steps. Label each entity with its role or purpose, and include credentials where applicable. For example:
+4. **Build a variable scope** from the JSON output. Top-level keys from each command's JSON become `$key_name` variables. Later `testdata:` lines should have `$variable` references replaced with values from earlier outputs before execution.
+5. **Build a human-readable testdata context block** for the runner. For each testdata command that was executed, summarize its output in plain language that helps the runner interpret generic steps. Label each entity with its role or purpose, and include credentials where applicable. For example:
 
    ```
-   TEST DATA (created by @testdata before this feature):
+   TEST DATA (created by testdata directives before this feature):
 
    Command: create location "Test Camp" --with-admin
    - Location name: "Test Camp" (id: abc-123, slug: test-camp)
@@ -149,9 +149,9 @@ If any `@testdata` lines are found:
 
    The runner uses this context to resolve generic references in steps. For example, when a step says "the admin manager email" or "the guest email", the runner looks up the corresponding value from this block. When a step says "I am signed in as the admin manager", the runner uses the email and password from here.
 
-If a `@testdata` command fails (non-zero exit), stop processing that feature file, report the error, and skip it.
+If a testdata command fails (non-zero exit), stop processing that feature file, report the error, and skip it.
 
-If no `@testdata` lines are present, proceed normally.
+If no `testdata:` lines are present, proceed normally.
 
 ### Concurrent execution via subagents
 
@@ -165,7 +165,7 @@ There are 3 Playwright MCP server instances available: `playwright-1`, `playwrig
    - `{file path}` — the feature file to execute
    - `{playwright instance}` — the assigned instance name
    - `{further setup}` — the furtherSetup content (or empty if not set)
-   - `{testdata context}` — if this file had `@testdata` tags, include the resolved data (IDs, credentials, etc.) as a "TEST DATA" block the runner can reference when interpreting steps. If no `@testdata` tags were present, substitute with empty string.
+   - `{testdata context}` — if this file had `testdata:` directives, include the resolved data (IDs, credentials, etc.) as a "TEST DATA" block the runner can reference when interpreting steps. If no `testdata:` directives were present, substitute with empty string.
 5. Wait for all subagents in the batch to complete before starting the next batch
 6. Collect JSON results from all subagents
 
