@@ -38,6 +38,25 @@ Before proceeding, verify all of the following. If any check fails, stop immedia
 
 ---
 
+## Bash discipline
+
+Every Bash call you make in this skill is subject to a permissions check. Operators pre-allowlist commands by their bare verb (e.g. `Bash(mkdir:*)`, `Bash(bun:*)`, `Bash(git diff:*)`). Clever chaining defeats the allowlist and forces the operator to babysit the run.
+
+**Hard rules — apply to every phase, including testdata processing, setup, and validation:**
+
+- **One command per Bash call.** No `&&`, `;`, `||`, pipes (`|`), command substitution (`$(...)`, backticks), or redirects between commands.
+- **No `for` / `while` loops, no `xargs`, no inline shell scripts.** If you need to run the same command on N inputs, make N separate Bash calls (in parallel where they're independent).
+- **No heredoc Python, Node, or Bun snippets to "speed things up."** Use a plain command, or write a real file and invoke it.
+- **No subshells or grouping** (`( ... )`, `{ ... ; }`).
+- **Keep arguments surgical.** Prefer `mkdir -p ./a` then `mkdir -p ./b` over `mkdir -p ./a ./b ./c`. The narrower the invocation, the easier it is for the operator to allowlist it once and forget.
+- **Variable substitution happens in Claude, not the shell.** When a `testdata:` line references `$something`, replace it with the literal value before issuing the Bash call — never let the shell expand it.
+
+When you need to run several independent commands, make multiple Bash tool calls in a single message so they run in parallel. That's cheap and stays within the rules.
+
+If a command genuinely needs composition (rare), stop and ask the operator rather than chaining.
+
+---
+
 ## Setup Phase
 
 ### 0. Load configuration
@@ -64,10 +83,18 @@ If we are in "Create" mode and we weren't given the subject to test in $ARGUMENT
 
 ### 2. Initialize directories
 
-Create the following directories at the project root if they don't exist:
+Create the following directories at the project root if they don't exist. Per the Bash discipline rules, issue these as **three separate Bash calls** (in parallel, in a single message) — do not combine them into one `mkdir` invocation:
 
 ```bash
-mkdir -p {directory}/specs {directory}/results /tmp/browser-tests
+mkdir -p {directory}/specs
+```
+
+```bash
+mkdir -p {directory}/results
+```
+
+```bash
+mkdir -p /tmp/browser-tests
 ```
 
 Where `{directory}` comes from `.browser-tests.json`.
@@ -132,8 +159,10 @@ If any `testdata:` lines are found:
 
 1. **Consult the furtherSetup file** for instructions on how to execute testdata commands. The furtherSetup file (from `.browser-tests.json`) contains project-specific details: what tool to run, how to invoke it, and where it executes (e.g., inside a container).
 2. **Execute each `testdata:` line in order** using the Bash tool, following the instructions from the furtherSetup file. Each line's content (after the `testdata: ` prefix, trimmed) is the command arguments.
+
+   **Strictly one testdata command per Bash call.** Do not batch them with `&&`, do not loop with `for`, do not write a Python/Bun/Node helper that runs them all, and do not pipe one's output into the next. The operator allowlists the testdata tool by its verb (e.g. `Bash(<your-testdata-tool>:*)`); chaining or scripting around it forces a permission prompt and stalls the run. If two testdata lines have no dependency on each other, you may issue them as parallel Bash calls in a single message — but each one is still its own call.
 3. **Capture the JSON output** from each command's stdout.
-4. **Build a variable scope** from the JSON output. Top-level keys from each command's JSON become `$key_name` variables. Later `testdata:` lines should have `$variable` references replaced with values from earlier outputs before execution.
+4. **Build a variable scope** from the JSON output. Top-level keys from each command's JSON become `$key_name` variables. When a later `testdata:` line references `$variable`, **you (Claude) substitute the literal value into the command string before issuing the Bash call.** Do not rely on shell expansion — the call should contain the resolved value, not a `$`-prefixed token.
 5. **Build a human-readable testdata context block** for the runner. For each testdata command that was executed, summarize its output in plain language that helps the runner interpret generic steps. Label each entity with its role or purpose, and include credentials where applicable. For example:
 
    ```
