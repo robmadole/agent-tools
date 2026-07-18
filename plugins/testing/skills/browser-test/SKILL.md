@@ -67,9 +67,11 @@ Read `.browser-tests.json` from the repository root. If it does **not** exist, s
 
 After informing them of this, proceed to go through `references/setup.md` in order to get this file created.
 
-If it exists, load `directory`, `baseURL`, and `furtherSetup` from it.
+If it exists, load `directory`, `baseURL`, `furtherSetup`, and the optional `verificationTools` from it.
 
 If `furtherSetup` is set, read that file (it is a path relative to the repository root). This provides project-specific testing context (test credentials, seed data, application quirks) that should be substituted into the runner subagent prompt and referenced during spec generation.
+
+`verificationTools` (optional) is an array of MCP tool names (or name prefixes) that runner subagents may use — in addition to Playwright — to verify external system state in `Then` steps (e.g. `["mcp__stripe__stripe_api_read", "mcp__stripe__stripe_api_search"]`). Treat these as **read-only** verification tools. If the key is absent or empty, runners stay Playwright-only. This value is substituted into the runner prompt as `{verification tools}` during agentic dispatch.
 
 ### 1. What to test
 
@@ -195,6 +197,7 @@ There are 3 Playwright MCP server instances available: `playwright-1`, `playwrig
    - `{playwright instance}` — the assigned instance name
    - `{further setup}` — the furtherSetup content (or empty if not set)
    - `{testdata context}` — if this file had `testdata:` directives, include the resolved data (IDs, credentials, etc.) as a "TEST DATA" block the runner can reference when interpreting steps. If no `testdata:` directives were present, substitute with empty string.
+   - `{verification tools}` — the `verificationTools` list from configuration, formatted as a bullet per tool. If unset or empty, substitute with empty string.
 5. Wait for all subagents in the batch to complete before starting the next batch
 6. Collect JSON results from all subagents
 
