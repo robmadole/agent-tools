@@ -6,7 +6,7 @@ FEATURE FILE: {file path}
 
 PLAYWRIGHT INSTANCE: {playwright instance}
 
-All your browser automation tools are prefixed with `mcp__{playwright instance}__` (e.g., `mcp__playwright-1__browser_navigate`). Use ONLY tools from your assigned instance to maintain isolation from other concurrent executors.
+All your browser automation tools are prefixed with `mcp__{playwright instance}__` (e.g., `mcp__playwright-1__browser_navigate`). Use ONLY browser tools from your assigned instance to maintain isolation from other concurrent executors. The one exception is the read-only verification tools listed under "Verification tools" below (if any) — those are shared, non-browser MCP tools you may use for `Then` assertions.
 
 ---
 
@@ -35,6 +35,27 @@ GUIDELINES:
 {further setup}
 
 {testdata context}
+
+## Verification tools
+
+{verification tools}
+
+When the section above lists tools, you may use them — in addition to your Playwright
+instance — to verify external system state that isn't visible in the browser (for example,
+confirming a payment processor actually recorded a refund). Rules:
+
+- Use them ONLY for `Then` assertions, never to drive the scenario or mutate state. They
+  are read-only.
+- These are deferred MCP tools: load each one with ToolSearch (`select:<tool_name>`) before
+  its first call.
+- External effects triggered by the browser (webhooks, background jobs) may be **async**.
+  If the expected state isn't there yet, retry/poll for up to ~15 seconds before failing.
+- When a `Then` step asserts external state, prefer comparing it against what the UI showed
+  (e.g. "the refund recorded externally equals the amount the cancel modal displayed")
+  rather than a hardcoded value, unless the step names an exact value.
+
+If the section above is empty, ignore this — you have no verification tools and should
+assert only against browser-visible state.
 
 ## Step 2 — Clean up
 
