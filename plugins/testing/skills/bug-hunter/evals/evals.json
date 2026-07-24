@@ -1,0 +1,23 @@
+{
+  "skill_name": "bug-hunter",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "This branch adds a new checkout-coupon feature (lots of new Vue components under assets/checkout/). Bug hunt it: run until you find 3 bugs or 1 hour passes. The dev site is at https://app.test:4443 and there's a seeded user doc in docs/seed-users.md. Playwright MCP is available.",
+      "expected_output": "A structured report with per-bug LOW/MEDIUM/HIGH impact scores, minimized repro steps, screenshot paths captured at confirmation time, a ruled-out section, and a running memory file updated during the hunt.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "qa the icon-upload feature on this branch before we ship friday. i mostly care about real user-facing breakage, not lint stuff. use the browser to actually verify anything you think is broken. cap it at 2 hours.",
+      "expected_output": "Time-boxed hunt combining diff reading with live Playwright verification; every reported bug empirically reproduced with a control run, scored LOW/MEDIUM/HIGH, shortest repro steps, and an error-state screenshot.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Poke holes in the new admin billing-credits UI (branch 014-billing-credits). Stop at 5 confirmed bugs. If something looks broken in code but you can't reproduce it in the browser or via curl/DB, don't count it.",
+      "expected_output": "Only empirically confirmed bugs counted (one per root cause), each with impact score, minimal repro, screenshot; unconfirmed candidates listed under ruled-out with reasons.",
+      "files": []
+    }
+  ]
+}
