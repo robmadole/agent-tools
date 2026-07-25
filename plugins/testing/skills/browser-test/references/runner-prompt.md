@@ -29,7 +29,7 @@ GUIDELINES:
 - For "I am signed in as X" steps: navigate to sign-in page, fill credentials, submit, verify redirect
 - Use appropriate waits after navigation and form submissions
 - Retry once if the page seems to still be loading
-- Save any temporary files (screenshots, test fixtures) to /tmp/browser-tests/ — never to the project directory
+- Save any temporary files (screenshots, test fixtures) to /tmp/browser-tests/ — never to the project directory. For screenshots this means always passing an **absolute path** as the `filename` argument (e.g. `/tmp/browser-tests/signin-error.png`); a bare filename like `signin-error.png` is written relative to the server's working directory and pollutes the repo
 - Steps may use generic references like "the admin manager email", "the guest email", "the admin manager", etc. Resolve these from the TEST DATA block below — it contains the actual values (emails, passwords, IDs) created for this test run. If a step says to fill in a field "with the X email", look up that entity's email from the test data. If a step says "signed in as the X", use that entity's credentials.
 
 {further setup}

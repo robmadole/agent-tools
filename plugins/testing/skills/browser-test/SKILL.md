@@ -103,6 +103,14 @@ Where `{directory}` comes from `.browser-tests.json`.
 
 **Important**: The `/tmp/browser-tests/` directory is for temporary files created during test execution (screenshots for verification, dummy test fixtures for upload testing, etc.). Never save temporary files into the project directory — only `.md` report files and `.feature` spec files belong in `{directory}/`.
 
+Then record the pre-run baseline of untracked files — you will diff against it during Cleanup to catch any temp files that leak into the repo:
+
+```bash
+git status --porcelain
+```
+
+Keep this list in context.
+
 ### 3. Gather context
 
 Based on the operator's choice in step 1:
@@ -377,6 +385,17 @@ bun {absolute path to this skill}/scripts/validate.js $(find {directory}/specs -
 - If any files fail validation, read the file, fix common issues (missing Feature keyword, malformed tables, indentation), and re-validate.
 - Only fix parsing errors — do not change test logic.
 - Report any files that could not be fixed to the operator.
+
+---
+
+## Cleanup
+
+After Final Validation, verify no temporary files from this run leaked into the repository:
+
+1. Run `git status --porcelain` and compare against the baseline captured during Setup step 2.
+2. Any **new** untracked file that is not under `{directory}/` is a stray test artifact (runner screenshots, test fixtures). Delete each one with its own `rm` call, per the Bash discipline rules.
+3. Files under `{directory}/` (specs, results) are expected outputs — leave them alone. If a new file outside `{directory}/` doesn't look like a test artifact (not a screenshot/fixture, or you can't explain where it came from), ask the operator instead of deleting it.
+4. Tell the operator what was removed, if anything.
 
 ---
 
