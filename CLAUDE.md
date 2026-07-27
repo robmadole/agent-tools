@@ -9,9 +9,20 @@ This is a Claude Code plugin marketplace package (`agent-tools`) by Rob Madole. 
 ## Architecture
 
 - **`.claude-plugin/marketplace.json`** — Top-level marketplace manifest. Declares the package name, owner, and lists all plugins.
-- **`plugins/testing/`** — The "testing" plugin. Its config lives at `plugins/testing/.claude-plugin/plugin.json` and contains skills for browser testing and JIT catch testing.
+- **`plugins/<name>/`** — Each plugin. Its config lives at `plugins/<name>/.claude-plugin/plugin.json` and its skills under `plugins/<name>/skills/<skill>/`.
 
 The manifest schema follows `https://anthropic.com/claude-code/marketplace.schema.json`.
+
+## Plugins & Skills
+
+- **`testing`** — Testing tools for developing software.
+  - `browser-test` — Orchestrate QA browser testing via Gherkin specs and Playwright.
+  - `bug-hunter` — Time/count-boxed bug hunt against a feature branch, combining code reading with live browser verification, ending in a scored report.
+  - `jit-catch` — Generate catching tests for Elixir code changes to check a diff for bugs.
+- **`develop`** — Tools for writing code during development.
+  - `hobgoblin` — Examine similar files for consistency violations and produce a list of differences.
+- **`quality`** — Tools for reviewing code quality.
+  - `deskcheck` — Local, interactive PR review: splits a branch diff into sections and serves a web UI with resumable per-section "reviewed" state.
 
 ## Adding a New Skill
 

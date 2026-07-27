@@ -18,7 +18,31 @@
         "gherkin",
         "elixir"
       ],
-      "version": "1.0.26"
+      "version": "1.0.27"
+    },
+    {
+      "name": "develop",
+      "description": "Tools for writing code during development",
+      "source": "./plugins/develop",
+      "category": "development",
+      "tags": [
+        "development",
+        "consistency",
+        "review"
+      ],
+      "version": "1.0.0"
+    },
+    {
+      "name": "quality",
+      "description": "Tools for reviewing code quality",
+      "source": "./plugins/quality",
+      "category": "quality",
+      "tags": [
+        "quality",
+        "review",
+        "pull-request"
+      ],
+      "version": "1.0.0"
     }
   ]
 }
