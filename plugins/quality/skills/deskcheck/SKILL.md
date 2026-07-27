@@ -142,8 +142,13 @@ by the branch* is different — that still has a real deletion diff to review.)
 ```bash
 PY="python3"; command -v uv >/dev/null && PY="uv run --with pygments"
 $PY <skill-dir>/scripts/server.py --workspace "$WS" --repo <repo-root> \
-    --target <target> --port 4517 --exit-on-drift
+    --target <target> --exit-on-drift
 ```
+
+The server binds a free port (no `--port` needed) and prints
+`Serving on http://127.0.0.1:<PORT>` to stdout on startup. Read that line
+from the background process's output to learn the actual port — use it for the
+curl check, the browser open, and the URL you give the user.
 
 When the branch has a PR, add `--github-sync --watch-comments` too:
 `--watch-comments` ETag-polls the PR every 60s (304s are rate-limit-free) and
@@ -171,9 +176,9 @@ top plus inline comments anchored to their hunks (falling back to the file
 when the anchor line left the diff). Rerun it whenever the user wants fresh
 comments. Skip silently when there's no PR or no `gh`.
 
-If the port is taken, pick another. Verify with
-`curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4517/` (expect 200),
-then open the browser (`open http://127.0.0.1:4517/` on macOS) and tell the
+Using the port from the server's `Serving on …` line, verify with
+`curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<PORT>/` (expect 200),
+then open the browser (`open http://127.0.0.1:<PORT>/` on macOS) and tell the
 user:
 
 - the URL, and that the review lives entirely on their machine

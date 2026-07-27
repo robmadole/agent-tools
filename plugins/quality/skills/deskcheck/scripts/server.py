@@ -6,7 +6,10 @@ Serves the review UI (assets/template.html) for the sections defined in
 to <workspace>/review.db (sqlite). Stdlib only.
 
     server.py --workspace ~/.deskcheck/myrepo/my-branch --repo /path/to/repo \
-              --target main [--port 4517]
+              --target main
+
+Binds a free OS-assigned port by default and prints
+"Serving on http://127.0.0.1:<PORT>" to stdout; pass --port to pin one.
 """
 import argparse
 import difflib
@@ -456,7 +459,8 @@ def main():
     ap.add_argument('--workspace', required=True)
     ap.add_argument('--repo', required=True)
     ap.add_argument('--target', default='main')
-    ap.add_argument('--port', type=int, default=0)
+    ap.add_argument('--port', type=int, default=0,
+                    help='0 (default) = free OS-assigned port, printed on startup')
     ap.add_argument('--exit-on-drift', action='store_true',
                     help='exit 42 when unsectioned changes appear (the exit is '
                          'the signal for a listening harness to re-section)')
