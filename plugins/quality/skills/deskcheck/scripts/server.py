@@ -197,9 +197,15 @@ def build_page(args, con):
         'comments': json.loads(cpath.read_text()) if cpath.exists() else None,
         'comments_rev': cpath.stat().st_mtime if cpath.exists() else 0,
     }
+    return render_template(data).encode()
+
+
+def render_template(data):
+    """Substitute the DATA blob into template.html. Shared with preview.py so
+    the static state-preview harness renders exactly as the live server does."""
     template = (SKILL_DIR / 'assets' / 'template.html').read_text()
     payload = json.dumps(data).replace('<', '\\u003c')
-    return template.replace('__DATA__', payload).encode()
+    return template.replace('__DATA__', payload)
 
 
 def github_sync_init(args):

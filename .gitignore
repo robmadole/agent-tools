@@ -2,3 +2,5 @@
 node_modules/
 __pycache__/
 *.pyc
+preview.html
+preview-*.html

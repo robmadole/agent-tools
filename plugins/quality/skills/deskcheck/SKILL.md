@@ -22,9 +22,12 @@ never hand-write the UI; the template in `assets/` is the UI.
 
 ## 1. Resolve what to review
 
-- **Target**: the merge target. Default: the repo's default branch
-  (`git symbolic-ref --short refs/remotes/origin/HEAD` minus the `origin/`
-  prefix; fall back to `main`). If the user names a different ref ("against
+- **Target**: the merge target. Default: the repo's default *remote-tracking*
+  branch (`git symbolic-ref --short refs/remotes/origin/HEAD`, e.g.
+  `origin/main`; fall back to `origin/main`). Use the `origin/` ref, **not** the
+  local branch — a local `main` that's behind `origin/main` produces a much
+  larger, misleading diff. If the remote-tracking ref may be stale, `git fetch`
+  first (or tell the user to). If the user names a different ref ("against
   develop", "vs release/2.0"), use that.
 - **Scope**: the whole diff by default. If the user names files, directories,
   subjects, or features, build sections only from those.
