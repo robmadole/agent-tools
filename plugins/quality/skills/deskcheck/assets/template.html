@@ -47,11 +47,21 @@
   #main-row { flex:1; display:flex; min-height:0; }
   #nav { width:420px; flex:none; overflow-y:auto; background:var(--panel);
          border-right:1px solid var(--border); padding:16px; }
-  #fully-reviewed { display:flex; align-items:center; gap:6px; white-space:nowrap;
+  /* "In Review" -> checkmark: label collapses and the check expands, so the
+     whole cell animates its width. Structure is built once (see applyState) so
+     the transition survives state updates. */
+  #fully-reviewed { display:flex; align-items:center; white-space:nowrap;
                     padding-left:20px; border-left:1px solid var(--border);
-                    font-weight:600; font-size:13px; color:#9a6700; }
+                    font-weight:600; font-size:13px; color:#9a6700;
+                    overflow:hidden; transition:color .35s ease; }
   #fully-reviewed.on { color:var(--done); }
-  #fully-reviewed.on svg { width:28px; height:28px; }
+  #fully-reviewed .fr-label { overflow:hidden; max-width:80px;
+                    transition:max-width .35s ease, opacity .2s ease; }
+  #fully-reviewed.on .fr-label { max-width:0; opacity:0; }
+  #fully-reviewed .fr-check { display:flex; align-items:center; width:0; overflow:hidden;
+                    transition:width .35s ease; }
+  #fully-reviewed.on .fr-check { width:28px; }
+  #fully-reviewed .fr-check svg { width:28px; height:28px; flex:none; }
   #topbar .pr-link { display:flex; align-items:center; gap:6px; padding-left:20px;
                      border-left:1px solid var(--border); font-weight:600; }
   .pr-link { font-size:12px; color:var(--accent); text-decoration:none;
@@ -63,13 +73,15 @@
   button.refresh:disabled { opacity:.6; cursor:default; }
   button.refresh.busy svg { animation:spin 1s linear infinite; }
   /* in a section header it becomes a full-height, icon-only divider cell */
-  .sec-head > button.refresh { align-self:stretch; flex:none; aspect-ratio:1;
+  .sec-head > button.refresh { align-self:stretch; flex:none; width:48px;
                                margin:-12px -16px -12px 0;
                                display:flex; align-items:center; justify-content:center;
                                padding:0; border:none; border-radius:0;
-                               border-left:1px solid var(--border); background:none;
+                               border-left:1px solid color-mix(in srgb, var(--text) 14%, transparent);
+                               background:none;
                                color:var(--muted); }
-  .sec-head > button.refresh:hover { color:var(--accent); border-left-color:var(--border); }
+  .sec-head > button.refresh:hover { color:var(--accent);
+                               border-left-color:color-mix(in srgb, var(--text) 14%, transparent); }
   @keyframes spin { to { transform:rotate(360deg); } }
   button.new-comments { display:block; width:100%; margin:0 0 10px; padding:6px 10px;
                         border:1px solid var(--accent); background:#ddf4ff;
@@ -91,7 +103,7 @@
                     font-size:12px; margin-top:2px; }
   .nav-title-row { display:flex; align-items:center; gap:4px; }
   .nav-title-row .t { flex:1; min-width:0; }
-  .nav-files { display:none; margin-top:6px; border-left:2px solid var(--border);
+  .nav-files { display:none; margin-top:6px; border-left:1px solid var(--border);
                padding-left:6px; }
   .nav-item.files-open .nav-files { display:block; }
   .nav-file { display:flex; align-items:center; gap:6px; font-size:11px;
@@ -123,14 +135,20 @@
   /* review toggle: a full-height sectioned cell on the right of each header —
      divider + checkmark only, echoing the top-bar "In Review" treatment.
      Negative margins let it span the header's full height past its padding. */
-  button.mark { align-self:stretch; flex:none; aspect-ratio:1; display:flex;
+  /* fixed-width cell (height still stretches to span the header, so the left
+     divider runs full-height); translucent divider so it reads correctly on
+     every header background — white, gray, blue, green, yellow. */
+  button.mark { align-self:stretch; flex:none; width:40px; display:flex;
                 align-items:center; justify-content:center; padding:0; border:none;
-                border-left:1px solid var(--border); background:none;
+                border-left:1px solid color-mix(in srgb, var(--text) 14%, transparent);
+                background:none;
                 cursor:pointer; color:var(--muted); opacity:.4; }
   button.mark svg { margin:0; width:18px; height:18px; }
   button.mark:hover { color:var(--accent); opacity:1; }
   button.mark.on { color:var(--done); opacity:1; }
-  .sec-head  > button.mark { margin:-12px -16px -12px 0; }
+  /* section cell is wider than the 40px file/hunk cells (which must match each
+     other since they stack); the section header stands alone above them. */
+  .sec-head  > button.mark { width:48px; margin:-12px -16px -12px 0; }
   .file-head > button.mark { margin:-8px -12px -8px 0; }
   .hunk-head > button.mark { margin:-8px -12px -8px 0; }
   button.copy { flex:none; border:none; background:none; padding:2px 4px; cursor:pointer;
@@ -142,7 +160,9 @@
 
   .sec { background:var(--panel); border:1px solid var(--border); border-radius:8px;
          margin-bottom:20px; }
-  .sec.reviewed { border:2px solid var(--done-soft); }
+  /* emphasis via outline (not a thicker border) so toggling reviewed can't
+     shift layout by a pixel; border stays 1px, just recolored. */
+  .sec.reviewed { border-color:var(--done-soft); outline:1px solid var(--done-soft); }
   .sec-head { display:flex; align-items:center; gap:12px; padding:12px 16px;
               cursor:pointer; border-bottom:1px solid var(--border);
               position:sticky; top:0; z-index:3; background:var(--panel);
@@ -158,7 +178,7 @@
           overflow:clip; background:var(--panel); }
   .file.gone { opacity:.55; }
   .file.gone > .file-head { cursor:default; border-bottom:none; }
-  .file.reviewed { border:2px solid var(--done-soft); }
+  .file.reviewed { border-color:var(--done-soft); outline:1px solid var(--done-soft); }
   /* nested headers park below the section header; --sec-h is its measured
      height (set per section at runtime), so a font/padding/title change
      can't desync the offset. Fallback covers the pre-measure first paint. */
@@ -175,7 +195,7 @@
   .hunk:first-child { border-top:none; }
   .hunk.standalone { border:1px solid var(--border); border-radius:6px;
                      margin-bottom:12px; overflow:clip; }
-  .hunk.standalone.reviewed { border:2px solid var(--done-soft); }
+  .hunk.standalone.reviewed { border-color:var(--done-soft); outline:1px solid var(--done-soft); }
   .hunk.standalone > .hunk-head { position:sticky; top:var(--sec-h,52px); z-index:2; }
   .hunk-head { display:flex; align-items:center; gap:10px; padding:8px 12px;
                background:#f1f8ff; cursor:pointer; }
@@ -234,7 +254,7 @@
   .file-list-item:hover code { color:var(--accent); }
   .file-list-item code { font-size:12px; overflow-wrap:anywhere; }
   .file-list-item .muted { margin-left:8px; }
-  .sec.conv { border:2px solid rgba(9,105,218,.35); }
+  .sec.conv { border-color:rgba(9,105,218,.35); outline:1px solid rgba(9,105,218,.35); }
   .comment { border-top:1px solid var(--border); padding:8px 12px; font-size:13px;
              background:var(--panel); }
   .comment-head { display:flex; gap:8px; align-items:baseline; margin-bottom:4px; }
@@ -802,7 +822,7 @@ function renderTree(node, sec, wrap, depth) {
   for (const f of node.files) {
     const item = el('div', 'nav-file');
     item.dataset.fileReview = f.path;
-    item.style.paddingLeft = pad(depth);
+    item.style.paddingLeft = (depth * 12 + 12) + 'px'; // +8 over pad(): files have no leading icon, align under folder labels
     item.title = f.path;
     item.append(el('span', 'nf-name', f.name));
     item.insertAdjacentHTML('beforeend', FA_CHECK);
@@ -868,8 +888,12 @@ function applyState() {
   $('#overall').textContent = doneAll + ' of ' + overall.size + ' hunks reviewed';
   const badge = $('#fully-reviewed');
   const done = branchFullyReviewed(state);
+  if (!badge.dataset.init) {  // build once so the width transition survives updates
+    badge.dataset.init = '1';
+    badge.innerHTML = '<span class="fr-label">In Review</span>'
+                    + '<span class="fr-check">' + FA_CHECK + '</span>';
+  }
   badge.classList.toggle('on', done);
-  badge.innerHTML = done ? FA_CHECK : 'In Review';
 }
 
 // Fully reviewed = the changed-file list matches sections.json (the server
@@ -888,6 +912,7 @@ function branchFullyReviewed(st) {
 }
 
 function build() {
+  document.title = DATA.title || 'PR Review';
   $('#title').textContent = DATA.title || 'PR Review';
   $('#sub').textContent = (DATA.branch || 'HEAD') + ' → ' + DATA.target;
   if (DATA.comments && DATA.comments.url) {
@@ -944,20 +969,8 @@ function build() {
   });
   applyState();
   trackStickyOffsets();
-  squareCells();
   // files with inline comments load eagerly so the comments are visible
   Object.keys(inlineByFile).forEach(ensureFile);
-}
-
-// Icon cells (the mark checkmark, the comments refresh) span the full header
-// height; match their width to that height so they render as perfect squares
-// whatever icon they hold. ResizeObserver keeps them square across font/resize.
-function squareCells() {
-  document.querySelectorAll('button.mark, .sec-head > button.refresh').forEach(b => {
-    const set = () => { b.style.width = b.getBoundingClientRect().height + 'px'; };
-    set();
-    if (!b._sq) { b._sq = new ResizeObserver(set); b._sq.observe(b.parentElement); }
-  });
 }
 
 // Nested sticky headers park below their section header. Measure its real

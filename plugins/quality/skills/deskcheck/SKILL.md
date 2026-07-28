@@ -162,8 +162,10 @@ Run it in the background. `--exit-on-drift` makes the process itself the drift
 monitor: when changed files appear that no section covers (stable across two
 30s polls), it prints `DRIFT_DETECTED: … <files>` and **exits with code 42**.
 Your background-task notification for that exit is the signal — read the
-DRIFT_DETECTED line, fold the listed files into sections.json, relaunch the
-same server command, and tell the user what was added. Any other exit code is
+DRIFT_DETECTED line, fold the listed files into sections.json, and relaunch —
+but add `--port <the port from the original "Serving on" line>` so the restart
+reuses the same port instead of drifting to a new one (the user's browser tab
+is still open on the old URL). Then tell the user what was added. Any other exit code is
 not drift (144 ≈ killed). If nobody is listening when it fires, nothing is
 lost: the user reruns the skill and the resume flow picks up the drift.
 
@@ -225,3 +227,11 @@ badge instead of staying silently green.
   from GitHub (via `gh`) into the workspace's comments.json
 - `scripts/selftest.py` — end-to-end smoke test in a throwaway repo; run it if
   you suspect the plumbing (prints `PASS`)
+- `scripts/fixture.py` — maintainer harness for iterating on the review UI:
+  builds a throwaway git repo with a real diff, which you serve with the real
+  `server.py`, then drives through named state transitions (`change-reviewed-file`,
+  `add-binary`, `add-unsectioned-file`, `mark-all`, `add-comment`, …) so any UI
+  state can be reproduced live. `fixture.py state` prints the transition menu;
+  `fixture.py --check` self-tests. Not used in the review flow itself. GitHub
+  write-back (`--github-sync`, `--watch-comments`) is out of scope for the local
+  fixture — point `server.py` at a real PR to exercise those.
