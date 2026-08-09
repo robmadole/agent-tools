@@ -41,6 +41,12 @@ Built 2026-07-22 → 2026-07-24.
   within modified line pairs get the darker tint, via difflib +
   token-offset splitting.
 - Sticky file headers while scrolling a long file.
+- **Expandable context** — collapsed lines between hunks (and above the first
+  hunk / below the last) show a clickable "↕ N hidden lines" strip that unfolds
+  them in ~20-line chunks. Rows come from `new_side` (the full file exactly as
+  the diff presents it), highlighted through the same pipeline. The trailing gap
+  is added at hydration, when `/api/filediff` reports the file's line count, so
+  it appears only when the last hunk doesn't already reach EOF.
 - Renders working tree + staged changes (diff vs merge-base, re-anchored per
   page load).
 
@@ -83,6 +89,20 @@ Built 2026-07-22 → 2026-07-24.
   Inline comments are spliced into the diff directly under their line;
   out-of-diff anchors fall back to the file with a note. Conversation lives
   in a collapsed panel up top.
+- **Create / reply / edit / delete comments** — with a PR present, clicking a
+  diff line's number opens a composer that posts a new inline review comment,
+  and every thread carries a "Reply…" field at its foot. Your **own** comments
+  get quiet `Edit` and `Delete` (two-click confirm) tools at the top-right,
+  beside an open-on-GitHub link. All go through `gh` (POST/PATCH/DELETE on the
+  line-based `pulls/{n}/comments` API) and take effect immediately; new/edited
+  bodies render their GFM optimistically while `comments.json` refreshes in the
+  background. Hidden when there's no PR.
+- **Threaded replies** — inline comments group into GitHub-style threads with an
+  avatar gutter: a root (anchored to its line) and replies nested under a thread
+  line, each showing the author's GitHub avatar (a colored initial when the image
+  can't load). Replies resolve to their thread root by walking `in_reply_to_id`
+  (GitHub flattens threads to one level, so a reply-to-a-reply still lands in the
+  same thread).
 - **Comment subscription** — ETag-conditional polling (304s are rate-limit
   free) auto-refreshes comments.json on count changes; the UI shows a
   "New comments — reload" pill. Manual refresh via the rotate icon button.

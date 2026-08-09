@@ -46,6 +46,9 @@ from render_diff import file_hunks  # noqa: E402
 
 FIXTURE = Path.home() / '.deskcheck' / '_fixture'
 SECTIONS_CLI = Path(__file__).resolve().parent / 'sections.py'
+# durable throwaway GitHub repo for exercising the real-PR write features
+# (comment posting, Viewed sync) that the local fixture can't reach on its own
+FIXTURE_REMOTE = 'robmadole/agent-tools-deskcheck-fixture'
 
 # --- default fixture: a small but real multi-section diff -------------------
 DEFAULT_BASE = {
@@ -166,6 +169,8 @@ TRANSITIONS = [
     ('revert-file', 'restore a sectioned file to target (grayed "no longer in diff")'),
     ('add-comment', 'append a PR comment to comments.json (comment + "New comments" pill)'),
     ('reset', 'marks + worktree + comments back to the freshly-served state'),
+    ('push-remote', 'publish the fixture to GitHub + ensure its PR — [slug], for real-PR tests'),
+    ('reset-comments', 'delete all comments on the fixture PR (remote half of reset)'),
     ('build', '(re)create the fixture repo + workspace from scratch'),
     ('state', 'print where the fixture is, its marks, and this transition menu'),
 ]
@@ -173,6 +178,14 @@ TRANSITIONS = [
 
 def sh(cwd, *cmd):
     subprocess.run(cmd, cwd=str(cwd), check=True, capture_output=True)
+
+
+def gh_out(cwd, *args, check=True):
+    """Run `gh` and return stdout; exit with its stderr on failure."""
+    r = subprocess.run(['gh', *args], cwd=str(cwd), capture_output=True, text=True)
+    if check and r.returncode != 0:
+        sys.exit(f'gh {" ".join(args[:2])} failed: {r.stderr.strip()}')
+    return r.stdout
 
 
 def write_tree(root, files):
@@ -372,8 +385,8 @@ def t_add_comment(repo, ws, port):
         {'author': 'octocat', 'created_at': '2026-07-28T12:00:00Z', 'url': url,
          'body': f'Comment #{n}: does rotation emit a metric we can alert on?'})
     data['inline'].append(
-        {'author': 'hubot', 'created_at': '2026-07-28T12:05:00Z', 'url': url,
-         'path': path, 'line': 2, 'side': 'RIGHT',
+        {'id': 1000 + n, 'author': 'hubot', 'created_at': '2026-07-28T12:05:00Z',
+         'url': url, 'path': path, 'line': 2, 'side': 'RIGHT',
          'body': 'Guard this against an already-revoked token.'})
     cpath.write_text(json.dumps(data))
     return (f'appended a conversation + inline comment on {path} '
@@ -394,6 +407,55 @@ def t_reset(repo, ws, port):
     return 'reset to the freshly-served state (marks, worktree, comments cleared)'
 
 
+def t_push_remote(repo, ws, port, slug=None):
+    """Publish the built fixture to a throwaway GitHub repo + ensure its PR.
+
+    Turns the manual git/gh seeding into one command so the real-PR write
+    features have something to point at. Force-pushes because `build` makes
+    fresh history each time — guarded so it can only ever target a repo whose
+    name marks it a fixture.
+    """
+    slug = slug or FIXTURE_REMOTE
+    if 'deskcheck-fixture' not in slug:
+        sys.exit(f'refusing to push to {slug!r}: force-push is destructive, so the '
+                 'name must contain "deskcheck-fixture"')
+    url = f'git@github.com:{slug}.git'
+    remotes = subprocess.run(['git', '-C', str(repo), 'remote'],
+                             capture_output=True, text=True).stdout.split()
+    sh(repo, 'git', 'remote', *(['set-url'] if 'origin' in remotes else ['add']),
+       'origin', url)
+    sh(repo, 'git', 'push', '--force', '-u', 'origin', 'main')
+    sh(repo, 'git', 'push', '--force', '-u', 'origin', 'feature')
+    view = subprocess.run(['gh', 'pr', 'view', '--json', 'url', '-q', '.url'],
+                          cwd=str(repo), capture_output=True, text=True)
+    if view.returncode == 0 and view.stdout.strip():
+        return f'pushed main+feature to {slug}; reused PR {view.stdout.strip()}'
+    pr_url = gh_out(repo, 'pr', 'create', '--base', 'main', '--head', 'feature',
+                    '--title', 'deskcheck fixture PR',
+                    '--body', 'Durable test PR for deskcheck real-PR features '
+                    '(inline comments, replies, Viewed sync).').strip()
+    return f'pushed main+feature to {slug}; created PR {pr_url}'
+
+
+def t_reset_comments(repo, ws, port):
+    """Delete every comment on the fixture PR — the remote half of `reset`, so
+    the PR is pristine for the next test run (branch + PR stay put)."""
+    slug = gh_out(repo, 'repo', 'view', '--json', 'nameWithOwner',
+                  '-q', '.nameWithOwner').strip()
+    num = gh_out(repo, 'pr', 'view', '--json', 'number', '-q', '.number').strip()
+    # ponytail: first 100 only; a fixture never accrues more between resets
+    review = json.loads(gh_out(
+        repo, 'api', f'repos/{slug}/pulls/{num}/comments?per_page=100', '-q', '[.[].id]'))
+    for cid in review:
+        gh_out(repo, 'api', '--method', 'DELETE', f'repos/{slug}/pulls/comments/{cid}')
+    issue = json.loads(gh_out(
+        repo, 'api', f'repos/{slug}/issues/{num}/comments?per_page=100', '-q', '[.[].id]'))
+    for cid in issue:
+        gh_out(repo, 'api', '--method', 'DELETE', f'repos/{slug}/issues/comments/{cid}')
+    return (f'deleted {len(review)} review + {len(issue)} conversation comment(s) '
+            f'from {slug} PR #{num}')
+
+
 TRANSITION_FNS = {
     'mark-partial': t_mark_partial, 'mark-section': t_mark_section,
     'mark-all': t_mark_all, 'unmark': t_unmark,
@@ -401,6 +463,7 @@ TRANSITION_FNS = {
     'stage-file': t_stage_file, 'add-binary': t_add_binary,
     'add-unsectioned-file': t_add_unsectioned_file, 'revert-file': t_revert_file,
     'add-comment': t_add_comment, 'reset': t_reset,
+    'push-remote': t_push_remote, 'reset-comments': t_reset_comments,
 }
 
 
@@ -498,7 +561,8 @@ def main():
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('transition', nargs='?', default='state',
                     help='one of: ' + ', '.join(n for n, _ in TRANSITIONS))
-    ap.add_argument('section_id', nargs='?', help='section id for mark-section')
+    ap.add_argument('section_id', nargs='?',
+                    help='section id (mark-section) or repo slug (push-remote)')
     ap.add_argument('--port', type=int, help='running server port (marking transitions)')
     ap.add_argument('--base', help='build: dir of "before" files (default: built-in)')
     ap.add_argument('--feature', help='build: dir of "after" files (default: built-in)')
@@ -526,8 +590,9 @@ def main():
     if not repo.exists():
         sys.exit('no fixture — run: fixture.py build')
     fn = TRANSITION_FNS[name]
-    msg = fn(repo, ws, args.port, args.section_id) if name == 'mark-section' \
-        else fn(repo, ws, args.port)
+    # mark-section takes a section id; push-remote takes an optional repo slug
+    msg = fn(repo, ws, args.port, args.section_id) \
+        if name in ('mark-section', 'push-remote') else fn(repo, ws, args.port)
     print(msg)
 
 

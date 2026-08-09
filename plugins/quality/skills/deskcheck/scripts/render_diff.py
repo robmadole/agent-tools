@@ -246,6 +246,31 @@ def hunk_html(entry, lexer):
     return render_hunk(entry['hunk'], lexer)
 
 
+def context_rows(repo, base, path, new_start, old_start, count):
+    """Render `count` unchanged context lines as diff <tr>s — the collapsed
+    lines between hunks that GitHub lets you expand.
+
+    Source is `new_side()` (the full file exactly as the diff presents it),
+    1-indexed by new-line number. In an unchanged region old and new advance
+    together, so `old_start` just tracks alongside. Rows match render_hunk's
+    context-row markup so they drop straight into a `<table class="diff">`.
+    Returns (html, total_new_lines) — total lets the caller bound the trailing
+    (to-EOF) gap it can't size from hunk headers alone.
+    """
+    content = new_side(repo, base, path)
+    lines = content.split('\n') if content else []
+    total = len(lines)
+    lexer = _lexer_for(path)
+    rows, o, n = [], old_start, new_start
+    for i in range(new_start - 1, min(new_start - 1 + count, total)):
+        code = _render_line(lines[i], lexer) or '&nbsp;'
+        rows.append(f'<tr><td class="ln">{o}</td><td class="ln">{n}</td>'
+                    f'<td class="sign"></td><td class="code">{code}</td></tr>')
+        o += 1
+        n += 1
+    return ''.join(rows), total
+
+
 def render_file(repo, target, path, base=None):
     """Parse + render: list of {'index', 'id', 'header', 'html'} for one file."""
     entries = file_hunks(repo, target, path, base=base)

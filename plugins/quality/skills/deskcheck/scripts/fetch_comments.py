@@ -57,21 +57,33 @@ def main():
 
     inline = fetch_all(a.repo, f'repos/{slug}/pulls/{n}/comments')
     conv = fetch_all(a.repo, f'repos/{slug}/issues/{n}/comments')
+    # who's viewing — lets the UI offer edit/delete only on their own comments,
+    # and gives the reply box the viewer's avatar
+    vr = subprocess.run(['gh', 'api', 'user'],
+                        cwd=a.repo, capture_output=True, text=True)
+    vu = json.loads(vr.stdout) if vr.returncode == 0 else {}
+    viewer = vu.get('login', '')
 
     data = {
         'pr': n,
         'title': pr['title'],
         'url': pr['url'],
+        'viewer': viewer,
+        'viewer_avatar': vu.get('avatar_url', ''),
         'conversation': [{
-            'author': c['user']['login'], 'created_at': c['created_at'],
+            'author': c['user']['login'], 'avatar_url': c['user'].get('avatar_url'),
+            'created_at': c['created_at'],
             'body': c.get('body') or '', 'url': c['html_url'],
             'body_html': render_md(a.repo, slug, c.get('body') or ''),
         } for c in conv],
         'inline': [{
+            'id': c['id'],  # parent id for in_reply_to when replying
+            'in_reply_to_id': c.get('in_reply_to_id'),  # thread linkage (None on roots)
             'path': c.get('path'),
             'line': c.get('line') or c.get('original_line'),
             'side': c.get('side') or 'RIGHT',
-            'author': c['user']['login'], 'created_at': c['created_at'],
+            'author': c['user']['login'], 'avatar_url': c['user'].get('avatar_url'),
+            'created_at': c['created_at'],
             'body': c.get('body') or '', 'url': c['html_url'],
             'body_html': render_md(a.repo, slug, c.get('body') or ''),
         } for c in inline],

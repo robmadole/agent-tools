@@ -181,6 +181,19 @@ top plus inline comments anchored to their hunks (falling back to the file
 when the anchor line left the diff). Rerun it whenever the user wants fresh
 comments. Skip silently when there's no PR or no `gh`.
 
+When a PR exists, the reviewer can also **post** back from the UI: clicking a
+diff line's number opens a composer that creates a new inline review comment,
+and every inline thread carries a **"Reply…" field** at its foot for threaded
+replies. On the reviewer's **own** comments, quiet `Edit` and `Delete`
+(two-click confirm) tools sit at the comment's top-right, beside an
+open-on-GitHub link. All go through `gh` (POST/PATCH/DELETE on the line-based
+`pulls/{n}/comments` API) and take effect **immediately** — one GitHub
+notification each, no pending-review batching. The compose/edit/delete
+affordances only appear when a PR is present; without one the UI is read-only as
+before. Inline comments render as **threads** — an avatar-gutter root plus
+replies nested under a thread line, grouped by `in_reply_to_id` (GitHub keeps
+review threads flat, so replies always attach to the thread root).
+
 Using the port from the server's `Serving on …` line, verify with
 `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:<PORT>/` (expect 200),
 then open the browser (`open http://127.0.0.1:<PORT>/` on macOS) and tell the
@@ -213,6 +226,12 @@ hunk's mark button (the rest of that file belongs to another section), and a
 file whose content changed after being marked shows a "changed since review"
 badge instead of staying silently green.
 
+Collapsed context between hunks (and above the first hunk / below the last)
+shows a clickable "↕ N hidden lines" strip that unfolds those lines in ~20-line
+chunks (served from `/api/context`). When a PR exists,
+hovering a diff line's number shows a "+" to add an inline comment, and each
+thread has a "Reply…" field at its foot (see the GitHub section).
+
 ## Scripts
 
 - `scripts/server.py` — the review server (stdlib http.server + sqlite)
@@ -232,6 +251,8 @@ badge instead of staying silently green.
   `server.py`, then drives through named state transitions (`change-reviewed-file`,
   `add-binary`, `add-unsectioned-file`, `mark-all`, `add-comment`, …) so any UI
   state can be reproduced live. `fixture.py state` prints the transition menu;
-  `fixture.py --check` self-tests. Not used in the review flow itself. GitHub
-  write-back (`--github-sync`, `--watch-comments`) is out of scope for the local
-  fixture — point `server.py` at a real PR to exercise those.
+  `fixture.py --check` self-tests. Not used in the review flow itself. To
+  exercise the real-PR write features (comment posting, `--github-sync`,
+  `--watch-comments`), `fixture.py push-remote` publishes the built fixture to a
+  throwaway GitHub repo and ensures its PR, then serve that clone with
+  `server.py`; `fixture.py reset-comments` wipes the PR's comments between runs.

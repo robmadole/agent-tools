@@ -29,8 +29,10 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from render_diff import (_diff_entries, _git, _lexer_for, file_hunks, hunk_html,
-                         merge_base, multi_file_hunks, new_side)
+from render_diff import (_diff_entries, _git, _lexer_for, context_rows,
+                         file_hunks, hunk_html, merge_base, multi_file_hunks,
+                         new_side)
+from fetch_comments import render_md  # GFM → HTML via GitHub's /markdown endpoint
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 LOCK = threading.Lock()
@@ -239,6 +241,101 @@ def refresh_comments(args):
         capture_output=True, text=True)
 
 
+def post_comment(args, req):
+    """Create a PR review comment via `gh` — a new line comment or a reply.
+
+    New comment needs {path, line, side, body}; reply needs {in_reply_to, body}.
+    Uses the line-based comments API, so path+line+side (the values already
+    shown in the diff's line-number cells) are all the anchoring GitHub wants —
+    no diff-position math. Returns (status_code, response_dict). On success it
+    fires a background comments.json refresh so the canonical body_html lands.
+    """
+    def sh(*cmd):
+        return subprocess.run(cmd, cwd=args.repo, capture_output=True, text=True)
+
+    body = (req.get('body') or '').strip()
+    if not body:
+        return 400, {'ok': False, 'detail': 'empty comment body'}
+    slug = sh('gh', 'repo', 'view', '--json', 'nameWithOwner', '-q', '.nameWithOwner')
+    if slug.returncode != 0:
+        return 500, {'ok': False, 'detail': 'gh repo view failed: ' + slug.stderr.strip()}
+    slug_str = slug.stdout.strip()
+    prv = sh('gh', 'pr', 'view', '--json', 'number,headRefOid')
+    if prv.returncode != 0:
+        return 500, {'ok': False, 'detail': 'gh pr view failed: ' + prv.stderr.strip()}
+    pr = json.loads(prv.stdout)
+    endpoint = f'repos/{slug_str}/pulls/{pr["number"]}/comments'
+    if req.get('in_reply_to'):
+        cmd = ['gh', 'api', '--method', 'POST', endpoint, '-f', f'body={body}',
+               '-F', f'in_reply_to={int(req["in_reply_to"])}']
+    else:
+        cmd = ['gh', 'api', '--method', 'POST', endpoint, '-f', f'body={body}',
+               '-f', f'commit_id={pr["headRefOid"]}', '-f', f'path={req["path"]}',
+               '-F', f'line={int(req["line"])}', '-f', f'side={req.get("side") or "RIGHT"}']
+    r = sh(*cmd)
+    if r.returncode != 0:
+        return 500, {'ok': False, 'detail': r.stderr.strip() or r.stdout.strip()}
+    c = json.loads(r.stdout)
+    threading.Thread(target=refresh_comments, args=(args,), daemon=True).start()
+    return 200, {'ok': True, 'comment': {
+        'id': c['id'], 'in_reply_to_id': c.get('in_reply_to_id'),
+        'path': c.get('path'),
+        'line': c.get('line') or c.get('original_line'),
+        'side': c.get('side') or 'RIGHT', 'author': c['user']['login'],
+        'avatar_url': c['user'].get('avatar_url'),
+        'created_at': c['created_at'], 'body': c.get('body') or '',
+        # render now so the optimistic card shows GFM without waiting for a reload
+        'body_html': render_md(args.repo, slug_str, c.get('body') or ''),
+        'url': c['html_url'],
+    }}
+
+
+def _slug(args):
+    r = subprocess.run(['gh', 'repo', 'view', '--json', 'nameWithOwner',
+                        '-q', '.nameWithOwner'], cwd=args.repo,
+                       capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def edit_comment(args, req):
+    """PATCH an existing review comment's body (author-only, enforced by GitHub)."""
+    body = (req.get('body') or '').strip()
+    cid = req.get('id')
+    if not body or not cid:
+        return 400, {'ok': False, 'detail': 'missing body or id'}
+    slug = _slug(args)
+    if not slug:
+        return 500, {'ok': False, 'detail': 'gh repo view failed'}
+    r = subprocess.run(
+        ['gh', 'api', '--method', 'PATCH', f'repos/{slug}/pulls/comments/{int(cid)}',
+         '-f', f'body={body}'], cwd=args.repo, capture_output=True, text=True)
+    if r.returncode != 0:
+        return 500, {'ok': False, 'detail': r.stderr.strip() or r.stdout.strip()}
+    c = json.loads(r.stdout)
+    threading.Thread(target=refresh_comments, args=(args,), daemon=True).start()
+    return 200, {'ok': True, 'comment': {
+        'id': c['id'], 'body': c.get('body') or '',
+        'body_html': render_md(args.repo, slug, c.get('body') or ''),
+    }}
+
+
+def delete_comment(args, req):
+    """DELETE a review comment (author-only, enforced by GitHub)."""
+    cid = req.get('id')
+    if not cid:
+        return 400, {'ok': False, 'detail': 'missing id'}
+    slug = _slug(args)
+    if not slug:
+        return 500, {'ok': False, 'detail': 'gh repo view failed'}
+    r = subprocess.run(
+        ['gh', 'api', '--method', 'DELETE', f'repos/{slug}/pulls/comments/{int(cid)}'],
+        cwd=args.repo, capture_output=True, text=True)
+    if r.returncode != 0:
+        return 500, {'ok': False, 'detail': r.stderr.strip() or r.stdout.strip()}
+    threading.Thread(target=refresh_comments, args=(args,), daemon=True).start()
+    return 200, {'ok': True}
+
+
 def comments_watch(args, interval):
     """ETag-conditional poll of the PR: refresh comments.json when the
     comment counts change. 304 responses are free against the rate limit."""
@@ -353,7 +450,11 @@ def rendered_file(args, con, base, path):
                 con.commit()
         out.append({'index': e['index'], 'id': e['id'],
                     'header': e['header'], 'html': body})
-    return {'path': path, 'hunks': out}
+    # new-side line count lets the client add a trailing (last-hunk → EOF) gap
+    # only when the last hunk doesn't already reach the end of the file
+    content = new_side(args.repo, base, path)
+    total_new = len(content.split('\n')) if content else 0
+    return {'path': path, 'hunks': out, 'total_new': total_new}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -404,6 +505,23 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(404, b'not found')
                 return
             self._send(200, json.dumps(payload).encode(), 'application/json')
+        elif url.path == '/api/context':
+            q = parse_qs(url.query)
+            try:
+                path = q.get('path', [''])[0]
+                new_start = int(q.get('new_start', ['0'])[0])
+                old_start = int(q.get('old_start', ['0'])[0])
+                count = int(q.get('count', ['20'])[0])
+                rows, total = context_rows(self.args.repo, self.base, path,
+                                           new_start, old_start, count)
+            except Exception:
+                self._send(404, b'not found')
+                return
+            # lines still hidden below what we just returned (bounds the to-EOF gap)
+            remaining = max(0, total - (new_start - 1 + count))
+            self._send(200, json.dumps({'rows': rows, 'total': total,
+                                        'remaining': remaining}).encode(),
+                       'application/json')
         else:
             self._send(404, b'not found')
 
@@ -414,6 +532,18 @@ class Handler(BaseHTTPRequestHandler):
                                'detail': (r.stdout or r.stderr).strip()})
             self._send(200 if r.returncode == 0 else 500, body.encode(),
                        'application/json')
+            return
+        if self.path in ('/api/add-comment', '/api/edit-comment', '/api/delete-comment'):
+            try:
+                n = int(self.headers.get('Content-Length', 0))
+                req = json.loads(self.rfile.read(n))
+            except Exception:
+                self._send(400, b'bad request')
+                return
+            fn = {'/api/add-comment': post_comment, '/api/edit-comment': edit_comment,
+                  '/api/delete-comment': delete_comment}[self.path]
+            code, resp = fn(self.args, req)
+            self._send(code, json.dumps(resp).encode(), 'application/json')
             return
         if self.path != '/api/toggle':
             self._send(404, b'not found')

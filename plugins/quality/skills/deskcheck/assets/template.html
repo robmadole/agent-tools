@@ -88,7 +88,6 @@
                         color:var(--accent); border-radius:6px; font-size:12px;
                         cursor:pointer; }
   .diff .comment-row td { padding:0; }
-  .comment-row .comment { border-bottom:1px solid var(--border); }
   .nav-item { display:block; padding:8px 10px; border-radius:6px; cursor:pointer;
               margin-bottom:4px; }
   .nav-item:hover { background:var(--bg); }
@@ -255,12 +254,31 @@
   .file-list-item code { font-size:12px; overflow-wrap:anywhere; }
   .file-list-item .muted { margin-left:8px; }
   .sec.conv { border-color:rgba(9,105,218,.35); outline:1px solid rgba(9,105,218,.35); }
-  .comment { border-top:1px solid var(--border); padding:8px 12px; font-size:13px;
-             background:var(--panel); }
-  .comment-head { display:flex; gap:8px; align-items:baseline; margin-bottom:4px; }
-  .comment-link { margin-left:auto; font-size:12px; color:var(--accent);
-                  text-decoration:none; white-space:nowrap; }
-  .comment-link svg.fa-up-right { margin-left:2px; }
+  .comment { display:flex; gap:10px; align-items:flex-start; padding:14px 16px;
+             font-size:13px; background:var(--panel); }
+  .comment-avatar { flex:0 0 auto; width:30px; height:30px; border-radius:50%;
+                    position:relative; overflow:hidden; display:flex;
+                    align-items:center; justify-content:center; color:#fff;
+                    font-size:12px; font-weight:600; line-height:1; user-select:none; }
+  .comment-avatar.sm { width:24px; height:24px; font-size:11px; }
+  .comment-avatar img { position:absolute; inset:0; width:100%; height:100%;
+                        object-fit:cover; }
+  .comment-main { flex:1 1 auto; min-width:0; }
+  .comment-head { display:flex; gap:7px; align-items:center; margin-bottom:4px; }
+  .comment-author { font-weight:600; }
+  .comment-meta { font-size:12px; }
+  .comment-tools { margin-left:auto; display:flex; gap:2px; align-items:center; }
+  .comment-tool { display:inline-flex; align-items:center; justify-content:center;
+                  width:24px; height:24px; padding:0; border:none; border-radius:5px;
+                  background:none; cursor:pointer; color:var(--muted); opacity:.4;
+                  text-decoration:none; }
+  .comment:hover .comment-tool:not(:disabled),
+  .comment:focus-within .comment-tool:not(:disabled) { opacity:.65; }
+  .comment-tool:not(:disabled):hover { opacity:1; color:var(--accent); background:var(--bg); }
+  .comment-tool:disabled { cursor:default; opacity:.22; }
+  .comment-tool svg.fa-icon { width:15px; height:15px; vertical-align:0; }
+  .comment-tool.act-delete.danger { opacity:1; color:#cf222e;
+    background:color-mix(in srgb, #cf222e 14%, transparent); }
   svg.fa-new-file { margin-right:2px; }
   .comment-body { overflow-wrap:anywhere; }
   .comment-body > *:first-child { margin-top:0; }
@@ -276,8 +294,71 @@
                              padding-left:10px; color:var(--muted); }
   .comment-body img { max-width:100%; }
   .comment-body a { color:var(--accent); }
+  /* conversation comments stand alone (flat list, not a thread card) */
   .sec-body > .comment, .file-body > .comment {
     border:1px solid var(--border); border-radius:6px; margin:0 0 8px; }
+
+  /* inline threads: a card grouping root + replies + a reply field */
+  .thread { border:1px solid var(--border); border-radius:8px; overflow:clip;
+            background:var(--panel); margin:0 8px; }
+  /* replies nest under a thread line dropped from the root avatar's center */
+  .thread-replies { margin-left:31px; border-left:2px solid var(--border); }
+  .thread-replies:empty { display:none; }
+  .thread-replies .comment.reply { padding:11px 14px; }
+  .thread-replies .comment.reply + .comment.reply {
+    border-top:1px solid color-mix(in srgb, var(--text) 8%, transparent); }
+  /* the reply field at the foot of a thread */
+  .thread-reply { display:flex; padding:10px 16px; background:var(--bg);
+                  border-top:1px solid var(--border); }
+  .thread-reply-collapsed { display:flex; gap:9px; align-items:center;
+                            flex:1 1 auto; cursor:text; }
+  .thread-reply-pill { flex:1 1 auto; padding:7px 11px; font-size:13px;
+                       color:var(--muted); background:var(--panel);
+                       border:1px solid var(--border); border-radius:6px; }
+  .thread-reply-collapsed:hover .thread-reply-pill { border-color:var(--muted); }
+  .thread-reply > .compose { flex:1 1 auto; padding:0; background:none; }
+
+  /* ---- compose / reply ---- */
+  body.can-comment .diff td.ln { cursor:pointer; }
+  /* hover "+" affordance is a top-layer popover, positioned in JS */
+  /* NB: don't set display here — a closed popover relies on the UA display:none,
+     and overriding it leaves a stuck "ghost" button. Set display only when open. */
+  .ln-add { position:fixed; margin:0; inset:auto; transform:translate(-50%,-50%);
+            width:28px; height:28px; padding:0; border:none; border-radius:7px;
+            cursor:pointer; background:var(--accent); color:#fff; line-height:1;
+            box-shadow:0 1px 4px rgba(31,35,40,.4); }
+  .ln-add:popover-open { display:flex; align-items:center; justify-content:center; }
+  .ln-add:hover { background:#0a5cc7; }
+
+  /* ---- expandable context between hunks ---- */
+  .context-lines table.diff { width:100%; }
+  .context-bar { display:flex; align-items:center; justify-content:center; gap:7px;
+                 padding:7px 8px; cursor:pointer; font-size:11px; color:var(--muted);
+                 border-top:1px solid var(--border); border-bottom:1px solid var(--border);
+                 user-select:none; }
+  /* a gap at the file's edge drops the border that would double the container's */
+  .context-gap:first-child .context-bar { border-top:none; }
+  .context-gap:last-child .context-bar { border-bottom:none; }
+  /* the bar's bottom border (or, once expanded, its continuous lines) is the
+     seam to the next hunk — drop that hunk's top border so it isn't doubled */
+  .context-gap + .hunk { border-top:none; }
+  .context-bar:hover { color:var(--accent); }
+  .context-icon { display:inline-flex; }
+  .context-icon svg.fa-icon { width:15px; height:15px; vertical-align:0; }
+  .ln-add svg.fa-icon { width:20px; height:20px; vertical-align:0; }
+  .compose { padding:8px 12px; background:var(--panel); }
+  .compose textarea { width:100%; box-sizing:border-box; min-height:68px; resize:vertical;
+                      font:inherit; font-size:13px; padding:8px; color:var(--text);
+                      border:1px solid var(--border); border-radius:6px; background:var(--bg); }
+  .compose-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:8px; }
+  .compose-actions button { border-radius:6px; padding:5px 14px; font-size:12px;
+                            cursor:pointer; border:1px solid var(--border); }
+  .compose-submit { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .compose-submit:disabled { opacity:.6; cursor:default; }
+  .compose-cancel { background:var(--panel); color:var(--text); }
+  .compose-hint { color:var(--muted); font-size:11px; margin-right:auto; align-self:center; }
+  .compose-error { color:#cf222e; font-size:12px; margin-top:6px; overflow-wrap:anywhere; }
+  .comment-edit { margin-top:6px; }
 
   /* ---- diff table ---- */
   table.diff { border-collapse:collapse; width:100%; }
@@ -333,6 +414,10 @@ const FA_FOLDER_OPEN = '<svg class="fa-icon fa-folder-open" xmlns="http://www.w3
 const FA_DIFF = '<svg class="fa-icon fa-diff" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Pro v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) Copyright 2026 Fonticons, Inc.--><path d="M160 96C124.7 96 96 124.7 96 160L96 480C96 513.1 121.2 540.4 153.5 543.7L160 544L480 544L486.5 543.7C516.6 540.6 540.6 516.7 543.6 486.6L543.9 480.1L543.9 160.1C543.9 124.8 515.2 96.1 479.9 96.1L160 96zM480 480L352 480L352 448L288 448L288 480L160 480L160 160L288 160L288 192L352 192L352 160L480 160L480 480zM329 239C319.6 229.6 304.4 229.6 295.1 239L231.1 303L229.4 304.8C221.7 314.2 222.3 328.1 231.1 336.9L295.1 400.9C304.5 410.3 319.7 410.3 329 400.9C338.3 391.5 338.4 376.3 329 367L306 344L392.1 344C405.4 344 416.1 333.3 416.1 320C416.1 306.7 405.4 296 392.1 296L306 296L329 273C338.4 263.6 338.4 248.4 329 239.1z"/></svg>';
 const FA_UP_RIGHT = '<svg class="fa-icon fa-up-right" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Pro v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) Copyright 2026 Fonticons, Inc.--><path d="M512 160C512 142.3 497.7 128 480 128L256 128C238.3 128 224 142.3 224 160C224 177.7 238.3 192 256 192L402.7 192L137.4 457.4C124.9 469.9 124.9 490.2 137.4 502.7C149.9 515.2 170.2 515.2 182.7 502.7L448 237.3L448 384C448 401.7 462.3 416 480 416C497.7 416 512 401.7 512 384L512 160z"/></svg>';
 const FA_COPY = '<svg class="fa-icon fa-copy" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M288 64C252.7 64 224 92.7 224 128L224 384C224 419.3 252.7 448 288 448L480 448C515.3 448 544 419.3 544 384L544 183.4C544 166 536.9 149.3 524.3 137.2L466.6 81.8C454.7 70.4 438.8 64 422.3 64L288 64zM160 192C124.7 192 96 220.7 96 256L96 512C96 547.3 124.7 576 160 576L352 576C387.3 576 416 547.3 416 512L416 496L352 496L352 512L160 512L160 256L176 256L176 192L160 192z"/></svg>';
+const FA_COMMENT_PLUS = '<svg class="fa-icon fa-comment-plus" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Pro v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) Copyright 2026 Fonticons, Inc.--><path d="M320 544C461.4 544 576 436.5 576 304C576 171.5 461.4 64 320 64C178.6 64 64 171.5 64 304C64 358.3 83.2 408.3 115.6 448.5L66.8 540.8C62 549.8 63.5 560.8 70.4 568.3C77.3 575.8 88.2 578.1 97.5 574.1L215.9 523.4C247.7 536.6 282.9 544 320 544zM320 208C333.3 208 344 218.7 344 232L344 280L392 280C405.3 280 416 290.7 416 304C416 317.3 405.3 328 392 328L344 328L344 376C344 389.3 333.3 400 320 400C306.7 400 296 389.3 296 376L296 328L248 328C234.7 328 224 317.3 224 304C224 290.7 234.7 280 248 280L296 280L296 232C296 218.7 306.7 208 320 208z"/></svg>';
+const FA_EXPAND = '<svg class="fa-icon fa-expand-updown" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Pro v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) Copyright 2026 Fonticons, Inc.--><path d="M297.4 41.4C309.9 28.9 330.2 28.9 342.7 41.4L406.7 105.4C415.9 114.6 418.6 128.3 413.6 140.3C408.6 152.3 396.9 160 384 160L352 160L352 208C352 225.7 337.7 240 320 240C302.3 240 288 225.7 288 208L288 160L256 160C243.1 160 231.4 152.2 226.4 140.2C221.4 128.2 224.2 114.5 233.3 105.3L297.3 41.3zM288 480L288 432C288 414.3 302.3 400 320 400C337.7 400 352 414.3 352 432L352 480L384 480C396.9 480 408.6 487.8 413.6 499.8C418.6 511.8 415.8 525.5 406.7 534.7L342.7 598.7C330.2 611.2 309.9 611.2 297.4 598.7L233.4 534.7C224.2 525.5 221.5 511.8 226.5 499.8C231.5 487.8 243.1 480 256 480L288 480zM192 320C192 337.7 177.7 352 160 352C142.3 352 128 337.7 128 320C128 302.3 142.3 288 160 288C177.7 288 192 302.3 192 320zM266.7 352C249 352 234.7 337.7 234.7 320C234.7 302.3 249 288 266.7 288C284.4 288 298.7 302.3 298.7 320C298.7 337.7 284.4 352 266.7 352zM405.4 320C405.4 337.7 391.1 352 373.4 352C355.7 352 341.4 337.7 341.4 320C341.4 302.3 355.7 288 373.4 288C391.1 288 405.4 302.3 405.4 320zM480 352C462.3 352 448 337.7 448 320C448 302.3 462.3 288 480 288C497.7 288 512 302.3 512 320C512 337.7 497.7 352 480 352z"/></svg>';
+const FA_PEN = '<svg class="fa-icon fa-pen" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M416.9 85.2L372 130.1L509.9 268L554.8 223.1C568.4 209.6 576 191.2 576 172C576 152.8 568.4 134.4 554.8 120.9L519.1 85.2C505.6 71.6 487.2 64 468 64C448.8 64 430.4 71.6 416.9 85.2zM338.1 164L122.9 379.1C112.2 389.8 104.4 403.2 100.3 417.8L64.9 545.6C62.6 553.9 64.9 562.9 71.1 569C77.3 575.1 86.2 577.5 94.5 575.2L222.3 539.7C236.9 535.6 250.2 527.9 261 517.1L476 301.9L338.1 164z"/></svg>';
+const FA_TRASH = '<svg class="fa-icon fa-trash" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M232.7 69.9L224 96L128 96C110.3 96 96 110.3 96 128C96 145.7 110.3 160 128 160L512 160C529.7 160 544 145.7 544 128C544 110.3 529.7 96 512 96L416 96L407.3 69.9C402.9 56.8 390.7 48 376.9 48L263.1 48C249.3 48 237.1 56.8 232.7 69.9zM512 208L128 208L149.1 531.1C150.7 556.4 171.7 576 197 576L443 576C468.3 576 489.3 556.4 490.9 531.1L512 208z"/></svg>';
 const $ = (s, r) => (r || document).querySelector(s);
 
 function el(tag, cls, text) {
@@ -342,9 +427,59 @@ function el(tag, cls, text) {
   return n;
 }
 
-const inlineByFile = {};
-((DATA.comments || {}).inline || []).forEach(c =>
-  (inlineByFile[c.path] ||= []).push(c));
+// Group inline comments into GitHub-style threads: a root (no in_reply_to_id)
+// plus its replies. Each reply resolves to its thread's root by walking
+// in_reply_to_id — GitHub flattens threads to one level, but chained ids
+// resolve fine too. threadsByFile[path] holds each thread once, anchored by its
+// root's line.
+const commentsById = {};
+((DATA.comments || {}).inline || []).forEach(c => { commentsById[c.id] = c; });
+function threadRoot(c) {
+  let cur = c, guard = 0;
+  while (cur.in_reply_to_id && commentsById[cur.in_reply_to_id] && guard++ < 200)
+    cur = commentsById[cur.in_reply_to_id];
+  return cur;
+}
+const threadsByFile = {};
+const threadsByRoot = new Map();
+((DATA.comments || {}).inline || []).forEach(c => {
+  const root = threadRoot(c);
+  let t = threadsByRoot.get(root.id);
+  if (!t) {
+    t = { root, replies: [] };
+    threadsByRoot.set(root.id, t);
+    (threadsByFile[root.path] ||= []).push(t);
+  }
+  if (c !== root) t.replies.push(c);      // chronological (inline[] is by created_at)
+});
+
+// Composing is only possible when the branch has a PR to post against.
+const canComment = !!(DATA.comments && DATA.comments.url);
+
+// A full-width row that hangs extra content (a comment, a composer) under a
+// diff line — the shape the GitHub-style comment anchoring already uses.
+function commentRow(node) {
+  const tr = document.createElement('tr');
+  tr.className = 'comment-row';
+  const td = document.createElement('td');
+  td.colSpan = 4;
+  td.append(node);
+  tr.append(td);
+  return tr;
+}
+
+// Insert `tr` after `anchorRow` AND after any comment/composer rows already
+// hanging off it, so multiple comments on one line stay in the order added
+// (chronological) instead of each new one landing on top of the row.
+function insertAfterAnchor(anchorRow, tr) {
+  let at = anchorRow;
+  while (at.nextElementSibling &&
+         (at.nextElementSibling.classList.contains('comment-row') ||
+          at.nextElementSibling.classList.contains('composer-row'))) {
+    at = at.nextElementSibling;
+  }
+  at.after(tr);
+}
 
 function hunkRange(header) {
   const m = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))?/.exec(header || '');
@@ -358,22 +493,270 @@ function commentInHunk(c, h) {
                            : c.line >= r.n && c.line < r.n + r.nl;
 }
 
+// Deterministic fallback color for an avatar when no image is available.
+function avatarColor(name) {
+  let h = 0;
+  for (const ch of (name || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return `hsl(${h % 360} 52% 46%)`;
+}
+
+// A round avatar: a colored initial with the real GitHub image layered over it,
+// so an offline / 404 avatar degrades to the initial instead of a broken image.
+function avatarEl(author, url, sm) {
+  const av = el('div', 'comment-avatar' + (sm ? ' sm' : ''));
+  av.style.background = avatarColor(author);
+  av.append(el('span', 'comment-avatar-initial', (author || '?').slice(0, 1).toUpperCase()));
+  if (url) {
+    const img = el('img');
+    img.src = url; img.alt = author; img.loading = 'lazy';
+    img.onerror = () => img.remove();
+    av.append(img);
+  }
+  return av;
+}
+
+// One comment: an avatar gutter + a main column (author/meta/tools header, then
+// body). Edit/Delete/GitHub are quiet tools top-right; Reply is the thread's
+// foot field (see threadBlock), so a card carries no bottom action strip.
 function commentCard(c, note) {
   const d = el('div', 'comment');
+  const main = el('div', 'comment-main');
   const head = el('div', 'comment-head');
-  head.append(el('strong', '', c.author));
-  head.append(el('span', 'muted',
-    (c.created_at || '').slice(0, 10) + (note ? ' · ' + note : '')));
-  const a = el('a', 'comment-link');
-  a.innerHTML = 'GitHub ' + FA_UP_RIGHT;
-  a.href = c.url;
-  a.target = '_blank';
-  head.append(a);
+  head.append(el('strong', 'comment-author', c.author));
+  head.append(el('span', 'muted comment-meta',
+    'commented ' + (c.created_at || '').slice(0, 10) + (note ? ' · ' + note : '')));
+  const tools = el('div', 'comment-tools');
+  const gh = el('a', 'comment-tool');
+  gh.href = c.url; gh.target = '_blank'; gh.title = 'Open on GitHub';
+  gh.innerHTML = FA_UP_RIGHT;
+  tools.append(gh);
+  // Edit/Delete render on every inline comment (id present) but are disabled
+  // unless you authored it — GitHub only lets an author mutate their own, so
+  // the buttons stay for a consistent tool cluster while making that clear.
+  const viewer = (DATA.comments || {}).viewer;
+  if (canComment && c.id) {
+    const mine = viewer && c.author === viewer;
+    const edit = el('button', 'comment-tool');
+    edit.type = 'button'; edit.innerHTML = FA_PEN; edit.disabled = !mine;
+    edit.title = mine ? 'Edit' : 'Only the author can edit';
+    if (mine) edit.onclick = () => editComment(d, c);
+    tools.append(edit);
+    const del = el('button', 'comment-tool act-delete');
+    del.type = 'button'; del.innerHTML = FA_TRASH; del.disabled = !mine;
+    del.title = mine ? 'Delete' : 'Only the author can delete';
+    if (mine) del.onclick = () => deleteComment(d, c, del);
+    tools.append(del);
+  }
+  head.append(tools);
   const body = el('div', 'comment-body');
   if (c.body_html) body.innerHTML = c.body_html;
   else { body.textContent = c.body; body.style.whiteSpace = 'pre-wrap'; }
-  d.append(head, body);
+  main.append(head, body);
+  d.append(avatarEl(c.author, c.avatar_url), main);
   return d;
+}
+
+// Shared compose widget: a textarea + Cancel/Comment, Cmd/Ctrl+Enter to submit,
+// Esc to cancel. onSubmit(body) may throw to surface an inline error.
+function composeBox({ placeholder, submitLabel, value, onSubmit, onCancel }) {
+  const box = el('div', 'compose');
+  const ta = el('textarea');
+  ta.placeholder = placeholder || 'Leave a comment';
+  if (value) ta.value = value;
+  const bar = el('div', 'compose-actions');
+  bar.append(el('span', 'compose-hint', '⌘/Ctrl+Enter'));
+  const cancel = el('button', 'compose-cancel', 'Cancel');
+  const submit = el('button', 'compose-submit', submitLabel || 'Comment');
+  cancel.onclick = () => onCancel();
+  const send = async () => {
+    const val = ta.value.trim();
+    if (!val) return;
+    submit.disabled = true;
+    const label = submit.textContent;
+    submit.textContent = 'Posting…';
+    box.querySelector('.compose-error')?.remove();
+    try {
+      await onSubmit(val);
+    } catch (e) {
+      submit.disabled = false;
+      submit.textContent = label;
+      box.append(el('div', 'compose-error', String(e.message || e)));
+    }
+  };
+  submit.onclick = send;
+  ta.addEventListener('keydown', e => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+    else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+  });
+  bar.append(cancel, submit);
+  box.append(ta, bar);
+  setTimeout(() => {
+    ta.focus();
+    if (value) ta.setSelectionRange(value.length, value.length);  // cursor at end
+  }, 0);
+  return box;
+}
+
+async function postComment(payload) {
+  const res = await api('/api/add-comment', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const j = await res.json();
+  if (!j.ok) throw new Error(j.detail || 'failed to post comment');
+  return j.comment;  // server also refreshes comments.json in the background
+}
+
+// Inline-edit a comment: swap its body for a composer prefilled with the source.
+function editComment(card, c) {
+  if (card.querySelector('.comment-edit')) return;   // already editing
+  const bodyEl = card.querySelector('.comment-body');
+  const tools = card.querySelector('.comment-tools');
+  bodyEl.style.display = 'none';
+  if (tools) tools.style.display = 'none';
+  const restore = () => {
+    edit.remove(); bodyEl.style.display = '';
+    if (tools) tools.style.display = '';
+  };
+  const box = composeBox({
+    value: c.body, submitLabel: 'Save', onCancel: restore,
+    onSubmit: async val => {
+      const res = await api('/api/edit-comment', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: c.id, body: val }),
+      });
+      const j = await res.json();
+      if (!j.ok) throw new Error(j.detail || 'edit failed');
+      c.body = j.comment.body; c.body_html = j.comment.body_html;
+      if (c.body_html) bodyEl.innerHTML = c.body_html;
+      else { bodyEl.textContent = c.body; bodyEl.style.whiteSpace = 'pre-wrap'; }
+      restore();
+    },
+  });
+  const edit = el('div', 'comment-edit');
+  edit.append(box);
+  bodyEl.after(edit);
+}
+
+// Delete a comment — two-click inline confirm (no native dialog): the first
+// click arms the trash button (fills it red), a second within 3s deletes.
+function deleteComment(card, c, btn) {
+  const disarm = () => {
+    btn.dataset.armed = ''; btn.classList.remove('danger'); btn.title = 'Delete';
+  };
+  if (btn.dataset.armed !== '1') {
+    btn.dataset.armed = '1';
+    btn.classList.add('danger');
+    btn.title = 'Click again to delete';
+    btn._t = setTimeout(disarm, 3000);
+    return;
+  }
+  clearTimeout(btn._t);
+  api('/api/delete-comment', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: c.id }),
+  }).then(r => r.json()).then(j => {
+    if (j.ok) { (card.closest('.comment-row') || card).remove(); return; }
+    disarm();
+    card.querySelector('.comment-main').append(
+      el('span', 'compose-error', j.detail || 'delete failed'));
+  });
+}
+
+// Open a composer under a diff line. side/line come from the clicked td.ln.
+function addLineComposer(row, file, line, side) {
+  // if a composer is already open in this line's comment block, focus it
+  for (let s = row.nextElementSibling;
+       s && (s.classList.contains('comment-row') || s.classList.contains('composer-row'));
+       s = s.nextElementSibling) {
+    if (s.classList.contains('composer-row')) { s.querySelector('textarea').focus(); return; }
+  }
+  const box = composeBox({
+    placeholder: `Comment on ${file}:${line}`,
+    onCancel: () => tr.remove(),
+    onSubmit: async val => {
+      // wrap the new comment as a one-comment thread so it gets its reply foot
+      const c = await postComment({ path: file, line, side, body: val });
+      tr.replaceWith(commentRow(threadBlock({ root: c, replies: [] }, 'line ' + line)));
+    },
+  });
+  const tr = commentRow(box);
+  tr.classList.add('composer-row');
+  insertAfterAnchor(row, tr);
+}
+
+// Resolve a numbered line-number cell to its composer target, or null.
+// Left cell → old side (LEFT), right cell → new side (RIGHT). Delta-view hunk
+// bodies have no hunkFile, so they never yield a target.
+function lineTargetFromCell(cell) {
+  const body = cell && cell.closest('.hunk-body');
+  if (!body || !body.dataset.hunkFile) return null;
+  const num = cell.textContent.trim();
+  if (!/^\d+$/.test(num)) return null;
+  const row = cell.closest('tr');
+  const side = [...row.querySelectorAll('td.ln')].indexOf(cell) === 0 ? 'LEFT' : 'RIGHT';
+  return { row, file: body.dataset.hunkFile, line: +num, side };
+}
+
+// A top-layer Popover API button that follows the pointer. `resolve(el)` maps
+// the element under the pointer to { rect, data } (or null): over that target →
+// show the button centered on rect and remember data; over the button → stay;
+// anywhere else → hide. The pointer's real position is the single source of
+// truth, which is what makes hide-on-leave robust — and a closed popover MUST
+// be truly display:none (see the :popover-open CSS) or it strands a ghost.
+function hoverPopover({ cls, html, title, resolve, onClick }) {
+  const btn = el('button', cls);
+  btn.type = 'button';
+  btn.innerHTML = html;
+  if (title) btn.title = title;
+  btn.setAttribute('popover', 'manual');
+  document.body.append(btn);
+  let data = null;
+  const hide = () => {
+    data = null;
+    if (btn.matches(':popover-open')) { try { btn.hidePopover(); } catch (e) {} }
+  };
+  const showAt = (rect, d) => {
+    data = d;
+    btn.style.left = (rect.left + rect.width / 2) + 'px';
+    btn.style.top = (rect.top + rect.height / 2) + 'px';
+    if (!btn.matches(':popover-open')) { try { btn.showPopover(); } catch (e) {} }
+  };
+  const evaluate = (x, y) => {
+    const at = document.elementFromPoint(x, y);
+    if (!at) { hide(); return; }
+    if (at === btn || btn.contains(at)) return;
+    const hit = at.closest ? resolve(at) : null;
+    if (hit) showAt(hit.rect, hit.data); else hide();
+  };
+  document.addEventListener('pointermove', e => evaluate(e.clientX, e.clientY));
+  // no pointermove fires once the pointer leaves the window — catch those
+  document.documentElement.addEventListener('pointerleave', hide);
+  document.addEventListener('mouseout', e => { if (!e.relatedTarget) hide(); });
+  btn.addEventListener('click', () => {
+    if (data == null) return;
+    const d = data;
+    hide();
+    onClick(d);
+  });
+  // a scroll would leave the fixed button stranded over the wrong row
+  window.addEventListener('scroll', hide, true);
+}
+
+if (canComment) {
+  document.addEventListener('click', e => {
+    const t = e.target.closest && lineTargetFromCell(e.target.closest('td.ln'));
+    if (t) addLineComposer(t.row, t.file, t.line, t.side);
+  });
+  hoverPopover({
+    cls: 'ln-add', html: FA_COMMENT_PLUS, title: 'Add a comment on this line',
+    resolve: at => {
+      const cell = at.closest('.hunk-body td.ln');
+      const t = cell && lineTargetFromCell(cell);
+      return t ? { rect: cell.getBoundingClientRect(), data: t } : null;
+    },
+    onClick: t => addLineComposer(t.row, t.file, t.line, t.side),
+  });
 }
 
 let reconnecting = false;
@@ -541,6 +924,7 @@ function ensureFile(path) {
             injectComments(b, path, h);
           }
         });
+        addTrailingGap(path, d.total_new);
       })
       .catch(() => fileLoads.delete(path)));
   }
@@ -595,26 +979,136 @@ function hunkBlock(file, h, standalone, noMark) {
 
 // GitHub-style anchoring: splice each comment into the diff table directly
 // under the row for its line (new-side for RIGHT, old-side for LEFT).
+// Render a thread as its root comment card plus indented reply cards.
+function threadBlock(thread, rootNote) {
+  const wrap = el('div', 'thread');
+  wrap.append(commentCard(thread.root, rootNote));
+  const replies = el('div', 'thread-replies');   // left thread-line; hidden while empty
+  thread.replies.forEach(r => {
+    const card = commentCard(r);
+    card.classList.add('reply');
+    replies.append(card);
+  });
+  wrap.append(replies);
+  if (canComment && thread.root.id) wrap.append(replyFoot(thread.root, replies));
+  return wrap;
+}
+
+// The thread's reply affordance: a collapsed "Reply…" pill that expands into a
+// composer. A posted reply appends to the thread's reply column (root threads
+// are flat), then the field collapses back.
+function replyFoot(root, replies) {
+  const foot = el('div', 'thread-reply');
+  const collapsed = el('div', 'thread-reply-collapsed');
+  const cm = DATA.comments || {};
+  collapsed.append(avatarEl(cm.viewer || '', cm.viewer_avatar, true));
+  collapsed.append(el('div', 'thread-reply-pill', 'Reply…'));
+  foot.append(collapsed);
+  collapsed.onclick = () => {
+    if (foot.querySelector('.compose')) return;   // already expanded
+    collapsed.style.display = 'none';
+    const box = composeBox({
+      placeholder: 'Reply…', submitLabel: 'Reply',
+      onCancel: () => { box.remove(); collapsed.style.display = ''; },
+      onSubmit: async val => {
+        const reply = commentCard(await postComment({ in_reply_to: root.id, body: val }));
+        reply.classList.add('reply');
+        replies.append(reply);
+        box.remove(); collapsed.style.display = '';
+      },
+    });
+    foot.append(box);
+  };
+  return foot;
+}
+
+// Splice each thread under its root's line (roots carry the anchor; replies
+// ride along inside the thread block).
 function injectComments(body, file, h) {
-  const cs = (inlineByFile[file] || []).filter(c => commentInHunk(c, h));
-  if (!cs.length) return;
+  const ts = (threadsByFile[file] || []).filter(t => commentInHunk(t.root, h));
+  if (!ts.length) return;
   const rows = [...body.querySelectorAll('table.diff tr')];
-  cs.forEach(c => {
+  ts.forEach(t => {
+    const c = t.root;
     const lnIdx = c.side === 'LEFT' ? 0 : 1;
     const row = rows.find(r => {
       const cells = r.querySelectorAll('td.ln');
       return cells[lnIdx] && cells[lnIdx].textContent === String(c.line);
     });
-    const tr = document.createElement('tr');
-    tr.className = 'comment-row';
-    const td = document.createElement('td');
-    td.colSpan = 4;
-    td.append(commentCard(c, 'line ' + c.line));
-    tr.append(td);
+    const tr = commentRow(threadBlock(t, 'line ' + c.line));
     const tbody = body.querySelector('tbody');
-    if (row) row.after(tr);
+    if (row) insertAfterAnchor(row, tr);
     else if (tbody) tbody.append(tr);
   });
+}
+
+// A collapsed run of unchanged lines between hunks (or file-start → first
+// hunk). The descriptor lives on the .context-bar so the expand popover can act
+// on it; revealed rows accumulate in .context-lines above the bar.
+const CTX_CHUNK = 20;
+
+function gapLabel(g) {
+  const n = g.endNew - g.startNew + 1;
+  return n + ' hidden line' + (n === 1 ? '' : 's');
+}
+
+function contextGap(path, gap) {
+  const wrap = el('div', 'context-gap');
+  const lines = el('div', 'context-lines');
+  const bar = el('div', 'context-bar');
+  bar._gap = { path, ...gap };
+  const icon = el('span', 'context-icon');
+  icon.innerHTML = FA_EXPAND;                        // the expand affordance, inline
+  bar.append(icon, el('span', 'context-label', gapLabel(bar._gap)));
+  bar.onclick = () => expandGap(bar);                // whole strip clickable
+  wrap.append(lines, bar);
+  return wrap;
+}
+
+// The trailing gap (last hunk → EOF) needs the file's total line count, which
+// only arrives with the hydrated /api/filediff payload — so it's added here,
+// once, and only when the last hunk doesn't already reach the end of the file.
+function addTrailingGap(path, totalNew) {
+  if (!totalNew) return;
+  const hunks = fileHunks(path);
+  const last = hunks.length && hunkRange(hunks[hunks.length - 1].header);
+  if (!last) return;
+  const startNew = last.n + last.nl;
+  if (startNew > totalNew) return;                 // last hunk already at EOF
+  const anyBody = [...document.querySelectorAll('.hunk-body')]
+    .find(b => b.dataset.hunkFile === path);
+  const fileBody = anyBody && anyBody.closest('.file-body');
+  if (!fileBody || fileBody.querySelector('.context-gap.trailing')) return;
+  const gap = contextGap(path, { startNew, startOld: last.o + last.ol, endNew: totalNew });
+  gap.classList.add('trailing');
+  const hunkDivs = fileBody.querySelectorAll(':scope > .hunk');
+  const lastHunk = hunkDivs[hunkDivs.length - 1];
+  if (lastHunk) lastHunk.after(gap); else fileBody.append(gap);
+}
+
+async function expandGap(bar) {
+  const g = bar._gap;
+  const room = Math.min(CTX_CHUNK, g.endNew - g.startNew + 1);
+  if (room <= 0) return;
+  let d;
+  try {
+    d = await (await api('/api/context?path=' + encodeURIComponent(g.path)
+      + '&new_start=' + g.startNew + '&old_start=' + g.startOld
+      + '&count=' + room)).json();
+  } catch (e) { return; }
+  const gapEl = bar.closest('.context-gap');
+  if (!d.rows) { gapEl.remove(); return; }
+  const tbl = el('table', 'diff');
+  const tb = document.createElement('tbody');
+  tb.innerHTML = d.rows;
+  tbl.append(tb);
+  gapEl.querySelector('.context-lines').append(tbl);
+  const revealed = tb.children.length;
+  g.startNew += revealed;
+  g.startOld += revealed;
+  // fully unfolded → drop only the "⋯" strip, keep the revealed lines in place
+  if (g.startNew > g.endNew) bar.remove();
+  else bar.querySelector('.context-label').textContent = gapLabel(g);
 }
 
 function fileBlock(path) {
@@ -664,11 +1158,28 @@ function fileBlock(path) {
   }
   head.append(mb);
   const body = el('div', 'file-body');
-  hunks.forEach(h => body.append(hunkBlock(path, h, false, single)));
-  (inlineByFile[path] || [])
-    .filter(c => !hunks.some(h => commentInHunk(c, h)))
-    .forEach(c => body.append(commentCard(c,
-      c.line ? 'line ' + c.line + ', outside current diff' : 'file comment')));
+  // Interleave expandable gaps: file-start → first hunk, and between hunks.
+  // Both are bounded by the hunk headers (old/new advance together in unchanged
+  // regions, so the leading gap starts at old 1 / new 1). The trailing gap
+  // (last hunk → EOF) is added later in addTrailingGap(), once hydration reveals
+  // the file's total line count.
+  hunks.forEach((h, i) => {
+    const cur = hunkRange(h.header);
+    if (i === 0) {
+      if (cur && cur.n > 1)
+        body.append(contextGap(path, { startNew: 1, startOld: 1, endNew: cur.n - 1 }));
+    } else {
+      const prev = hunkRange(hunks[i - 1].header);
+      if (cur && prev && cur.n - 1 >= prev.n + prev.nl)
+        body.append(contextGap(path, {
+          startNew: prev.n + prev.nl, startOld: prev.o + prev.ol, endNew: cur.n - 1 }));
+    }
+    body.append(hunkBlock(path, h, false, single));
+  });
+  (threadsByFile[path] || [])
+    .filter(t => !hunks.some(h => commentInHunk(t.root, h)))
+    .forEach(t => body.append(threadBlock(t,
+      t.root.line ? 'line ' + t.root.line + ', outside current diff' : 'file comment')));
   if (isStale) {
     // show only what changed since the reviewer's mark-time snapshot,
     // with a toggle back to the full diff
@@ -915,6 +1426,7 @@ function build() {
   document.title = DATA.title || 'PR Review';
   $('#title').textContent = DATA.title || 'PR Review';
   $('#sub').textContent = (DATA.branch || 'HEAD') + ' → ' + DATA.target;
+  document.body.classList.toggle('can-comment', canComment);
   if (DATA.comments && DATA.comments.url) {
     // PR link lives at the far right of the top bar (most critical)
     const a = el('a', 'pr-link');
@@ -970,7 +1482,7 @@ function build() {
   applyState();
   trackStickyOffsets();
   // files with inline comments load eagerly so the comments are visible
-  Object.keys(inlineByFile).forEach(ensureFile);
+  Object.keys(threadsByFile).forEach(ensureFile);
 }
 
 // Nested sticky headers park below their section header. Measure its real
