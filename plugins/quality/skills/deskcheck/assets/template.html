@@ -72,7 +72,7 @@
   .sec-head > button.refresh:hover { color:var(--accent);
                                border-left-color:color-mix(in srgb, var(--text) 14%, transparent); }
   @keyframes spin { to { transform:rotate(360deg); } }
-  button.new-comments { display:block; width:100%; margin:0 0 10px; padding:6px 10px;
+  button.new-comments { display:block; width:fit-content; margin:0 0 10px; padding:6px 10px;
                         border:1px solid var(--accent); background:#ddf4ff;
                         color:var(--accent); border-radius:6px; font-size:12px;
                         cursor:pointer; }
@@ -376,8 +376,13 @@
              border:none; border-left:1px solid var(--border); background:none;
              cursor:pointer; color:var(--muted); }
   #kbd-btn:hover { color:var(--accent); }
-  .kbd-focus { outline:2px solid var(--accent); outline-offset:-2px;
-               border-radius:6px; }
+  /* focus ring sits OUTSIDE the box (a sticky header can't paint over it) and
+     wins over the .reviewed/.conv state outlines (higher specificity) via
+     !important, so it's always the full 2px accent — never a hairline */
+  .kbd-focus { outline:2px solid var(--accent) !important; outline-offset:2px; }
+  /* a regular hunk lives inside a .file (overflow:clip), which would clip an
+     outside ring — inset it there; the file has no sticky header to hide it */
+  .file .kbd-focus { outline-offset:-2px; }
   #kbd-overlay { position:fixed; inset:0; z-index:50; display:none;
                  align-items:center; justify-content:center;
                  background:rgba(31,35,40,.45); }
@@ -453,7 +458,8 @@
     <h2>Keyboard shortcuts</h2>
     <dl>
       <dt><kbd>j</kbd> / <kbd>k</kbd></dt><dd>Next / previous hunk</dd>
-      <dt><kbd>[</kbd> / <kbd>]</kbd></dt><dd>Previous / next section</dd>
+      <dt><kbd>[</kbd> / <kbd>]</kbd></dt><dd>Previous / next file</dd>
+      <dt><kbd>{</kbd> / <kbd>}</kbd></dt><dd>Previous / next section</dd>
       <dt><kbd>Space</kbd></dt><dd>Collapse / expand the focused item</dd>
       <dt><kbd>m</kbd></dt><dd>Mark focused item reviewed &amp; advance</dd>
       <dt><kbd>?</kbd></dt><dd>Toggle this help</dd>
@@ -1879,18 +1885,58 @@ function setKbdFocus(n) {
   if (n) { n.classList.add('kbd-focus'); n.scrollIntoView({ block: 'center' }); }
 }
 
-// Step through `list`; the first press just anchors on where you already are.
+// Step through `list`, skipping items already reviewed — you land on the next
+// thing that still needs review. The first press anchors on the nearest open
+// item; if nothing's open ahead, stay put rather than jump onto a reviewed one.
 function step(list, dir, cur) {
   if (!list.length) return;
+  const open = n => !n.classList.contains('reviewed');
   const i = cur ? list.indexOf(cur) : -1;
-  if (i < 0) return setKbdFocus(nearestToTop(list));
-  setKbdFocus(list[Math.max(0, Math.min(list.length - 1, i + dir))]);
+  if (i < 0) {
+    const first = nearestToTop(list.filter(open));
+    return first && setKbdFocus(first);
+  }
+  for (let j = i + dir; j >= 0 && j < list.length; j += dir)
+    if (open(list[j])) return setKbdFocus(list[j]);
 }
 
-const moveHunk = dir => step(visible('.hunk'), dir, kbdFocus);
-// from a hunk, [/] jump by its containing section, so you don't have to k back
-const moveSection = dir =>
+// first unreviewed visible <sel> inside a container — used to dive from a
+// coarser focus into its next child
+const firstOpenIn = (container, sel) =>
+  visible(sel).find(n => container.contains(n) && !n.classList.contains('reviewed'));
+
+// Going forward to a finer level while focused on a coarser container descends
+// into that container's first unreviewed child, rather than jumping to the
+// nearest one on screen. Otherwise step through siblings at this level.
+const moveHunk = dir => {
+  if (dir > 0 && kbdFocus && !kbdFocus.classList.contains('hunk')) {
+    const child = firstOpenIn(kbdFocus, '.hunk');   // a section or file → its first hunk
+    if (child) return setKbdFocus(child);
+  }
+  step(visible('.hunk'), dir, kbdFocus);
+};
+// [/] step whole files. ] from a section dives into its first file (descend);
+// [ from a hunk pops up to its containing file (ascend); otherwise sibling files.
+const moveFile = dir => {
+  if (dir > 0 && kbdFocus?.classList.contains('sec')) {
+    const child = firstOpenIn(kbdFocus, '.file');
+    if (child) return setKbdFocus(child);
+  }
+  if (dir < 0 && kbdFocus?.classList.contains('hunk')) {
+    const parent = kbdFocus.closest('.file');
+    if (parent) return setKbdFocus(parent);
+  }
+  step(visible('.file'), dir, kbdFocus && kbdFocus.closest('.file'));
+};
+// {/} step sections (rarer, so the shifted keys). { from a hunk/file pops up to
+// its containing section (ascend); otherwise sibling sections.
+const moveSection = dir => {
+  if (dir < 0 && kbdFocus && !kbdFocus.classList.contains('sec')) {
+    const parent = kbdFocus.closest('.sec');
+    if (parent) return setKbdFocus(parent);
+  }
   step(visible('.sec'), dir, kbdFocus && (kbdFocus.closest('.sec')));
+};
 
 // A node's own mark button (data-mark-for === its key) — not a descendant's.
 function ownMark(n) {
@@ -1898,15 +1944,22 @@ function ownMark(n) {
       || n.querySelector('.mark');
 }
 
-function markCurrent() {
+async function markCurrent() {
   const hunks = visible('.hunk');
   if (!kbdFocus) return hunks.length && setKbdFocus(nearestToTop(hunks));
-  const btn = ownMark(kbdFocus);
-  if (btn) btn.click();  // reuse the real toggle (persists + snapshots + scrolls)
-  if (kbdFocus.classList.contains('hunk')) {  // advance only makes sense per-hunk
-    const i = hunks.indexOf(kbdFocus);
-    if (i >= 0 && hunks[i + 1]) setKbdFocus(hunks[i + 1]);
-  }
+  // fall back to the containing file's (then section's) mark when the focused
+  // hunk has none of its own — single-hunk files and binaries render no hunk
+  // mark button, and that hunk is covered by the file mark anyway, so 'm' would
+  // otherwise be a dead key there
+  const btn = ownMark(kbdFocus)
+    || (kbdFocus.closest('.file') && ownMark(kbdFocus.closest('.file')))
+    || (kbdFocus.closest('.sec') && ownMark(kbdFocus.closest('.sec')));
+  const advanceHunk = kbdFocus.classList.contains('hunk');
+  // 'm' always marks reviewed — never toggles back off. Await the toggle so the
+  // item finishes collapsing (and the layout reflows) BEFORE we advance —
+  // otherwise the jump scrolls against the old layout and lands slightly off.
+  if (btn && !btn.classList.contains('on')) await toggle(btn.dataset.markFor);
+  if (advanceHunk) moveHunk(1);  // next unreviewed hunk, on the settled layout
 }
 
 // Space collapses/expands the focused node without touching its reviewed mark —
@@ -1938,7 +1991,8 @@ function initKeyboard() {
     if (open) return;  // help panel eats nav keys while it's up
     const act = { j: () => moveHunk(1), k: () => moveHunk(-1), m: markCurrent,
                   ' ': toggleCollapse,
-                  '[': () => moveSection(-1), ']': () => moveSection(1) }[e.key];
+                  '[': () => moveFile(-1), ']': () => moveFile(1),
+                  '{': () => moveSection(-1), '}': () => moveSection(1) }[e.key];
     if (act) { act(); e.preventDefault(); }
   });
 }

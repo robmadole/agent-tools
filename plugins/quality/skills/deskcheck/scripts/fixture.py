@@ -178,7 +178,8 @@ TRANSITIONS = [
     ('add-unsectioned-file', 'add a changed file in no section (drift / Unsectioned)'),
     ('revert-file', 'restore a sectioned file to target (grayed "no longer in diff")'),
     ('add-comment', 'append a PR comment to comments.json (comment + "New comments" pill)'),
-    ('reset', 'marks + worktree + comments back to the freshly-served state'),
+    ('add-note', 'jot a private line-anchored note (purple "Private note" card, local only)'),
+    ('reset', 'marks + worktree + comments + notes back to the freshly-served state'),
     ('push-remote', 'publish the fixture to GitHub + ensure its PR — [slug], for real-PR tests'),
     ('reset-comments', 'delete all comments on the fixture PR (remote half of reset)'),
     ('build', '(re)create the fixture repo + workspace from scratch'),
@@ -403,9 +404,22 @@ def t_add_comment(repo, ws, port):
             '(reload shows it; the "New comments" pill appears within 30s)')
 
 
+def t_add_note(repo, ws, port):
+    """Jot a private, line-anchored review note into review.db — the local
+    annotation the reviewer keeps to themselves (never sent to GitHub)."""
+    path = sectioned_files(ws)[0]
+    con = srv.open_db(ws)  # creates the notes table if the schema is fresh
+    con.execute('INSERT INTO notes(path, line, side, body) VALUES(?,?,?,?)',
+                (path, 4, 'RIGHT',
+                 'Confirm rotate_from is validated before we revoke() it.'))
+    con.commit()
+    con.close()
+    return f'added a private note on {path}:4 (purple "Private note" card, only you)'
+
+
 def t_reset(repo, ws, port):
     con = srv.open_db(ws)
-    for tbl in ('reviews', 'snapshots', 'render_cache'):
+    for tbl in ('reviews', 'snapshots', 'render_cache', 'notes'):
         con.execute(f'DELETE FROM {tbl}')
     con.commit()
     con.close()
@@ -472,7 +486,7 @@ TRANSITION_FNS = {
     'change-reviewed-file': t_change_reviewed_file, 'edit-file': t_edit_file,
     'stage-file': t_stage_file, 'add-binary': t_add_binary,
     'add-unsectioned-file': t_add_unsectioned_file, 'revert-file': t_revert_file,
-    'add-comment': t_add_comment, 'reset': t_reset,
+    'add-comment': t_add_comment, 'add-note': t_add_note, 'reset': t_reset,
     'push-remote': t_push_remote, 'reset-comments': t_reset_comments,
 }
 
