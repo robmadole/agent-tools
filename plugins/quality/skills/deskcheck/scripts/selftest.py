@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -59,6 +60,19 @@ def main():
     page = urllib.request.urlopen(f'http://127.0.0.1:{port}/').read().decode()
     assert 'Core change' in page and '__DATA__' not in page
     assert '<table class="diff">' not in page, 'page should not inline diff HTML'
+
+    # static assets are served from assets/, not inlined into the page
+    assert '@font-face' not in page, 'fonts should be served, not inlined'
+    fonts = urllib.request.urlopen(f'http://127.0.0.1:{port}/assets/fonts.css').read()
+    assert b'@font-face' in fonts, 'fonts.css not served'
+    merm = urllib.request.urlopen(f'http://127.0.0.1:{port}/assets/mermaid.min.js')
+    assert merm.status == 200, 'mermaid.min.js not served'
+    for bad in ('/assets/../server.py', '/assets/nope.css', '/assets/x.py'):
+        try:
+            urllib.request.urlopen(f'http://127.0.0.1:{port}{bad}')
+            assert False, f'{bad} should 404'
+        except urllib.error.HTTPError as e:
+            assert e.code == 404, (bad, e.code)
 
     fd = json.loads(urllib.request.urlopen(
         f'http://127.0.0.1:{port}/api/filediff?path=app.py').read())
@@ -198,6 +212,44 @@ def main():
     assert cli_run('remove-files', 'extras', 'nope.py').returncode != 0
     assert cli_run('remove-section', 'extras').returncode == 0
     assert 'extras' not in cli_run('list').stdout
+
+    # local notes: add via HTTP, read back, appear in the page, edit, delete
+    def post(path, payload):
+        req = urllib.request.Request(
+            f'http://127.0.0.1:{port}{path}',
+            data=json.dumps(payload).encode(),
+            headers={'Content-Type': 'application/json'})
+        return json.loads(urllib.request.urlopen(req).read())
+
+    nr = post('/api/add-note', {'path': 'app.py', 'line': 2, 'side': 'RIGHT',
+                                'body': 'racy note'})
+    assert nr['ok'] and nr['note']['id'] == 1, nr
+    nid = nr['note']['id']
+    assert srv.read_notes(srv.Handler.con)[0]['body'] == 'racy note'
+    assert 'racy note' in urllib.request.urlopen(f'http://127.0.0.1:{port}/').read().decode(), \
+        'note not embedded in page DATA'
+    try:
+        post('/api/add-note', {'path': 'app.py', 'body': 'no line'})
+        assert False, 'add-note without a line should 400'
+    except urllib.error.HTTPError as e:
+        assert e.code == 400, e.code
+    assert post('/api/edit-note', {'id': nid, 'body': 'edited'})['note']['body'] == 'edited'
+    assert post('/api/delete-note', {'id': nid})['ok']
+    assert srv.read_notes(srv.Handler.con) == []
+    # notes.py reads the same db for the agent
+    import notes as notes_cli
+    post('/api/add-note', {'path': 'app.py', 'line': 2, 'side': 'RIGHT', 'body': 'via cli'})
+    md = notes_cli.as_markdown(notes_cli.read_notes(str(ws)))
+    assert 'via cli' in md and 'app.py:2' in md, md
+
+    # resolving a note (agent acted on it) hides it from the UI + future pulls,
+    # but keeps it in the db as a record
+    rid = notes_cli.read_notes(str(ws))[0]['id']
+    assert notes_cli.resolve(str(ws), [rid]) == 1
+    assert notes_cli.resolve(str(ws), [rid]) == 0, 'already-resolved re-resolved'
+    assert notes_cli.read_notes(str(ws)) == [], 'resolved note still listed'
+    assert len(notes_cli.read_notes(str(ws), include_resolved=True)) == 1
+    assert srv.read_notes(srv.Handler.con) == [], 'resolved note still in page data'
 
     httpd.shutdown()
     shutil.rmtree(tmp)

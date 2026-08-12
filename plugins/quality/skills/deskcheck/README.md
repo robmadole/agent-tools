@@ -83,6 +83,20 @@ Built 2026-07-22 → 2026-07-24.
   probes every 2s, and reloads when the server returns (restarts are routine:
   drift exits on purpose).
 
+## Local notes
+- **Private, line-anchored notes** — separate from GitHub comments and needing
+  no PR. The line-number "+" opens a composer with a **PR comment | Private
+  note** toggle (note-only when there's no PR); notes render as purple cards
+  inline ("saved locally"), with edit/delete. Stored in
+  `review.db`, so the agent can read and act on them via
+  `notes.py list|count` — pull, not push: read on demand, count surfaced on
+  resume. The gutter "+" is always live because a note needs no PR.
+- **Resolve when handled** — after the agent acts on a note it runs
+  `notes.py resolve <id>`; resolved notes drop out of the UI and out of
+  `list`/`count` (so they're never re-processed) but stay in the db
+  (`list --all`) as a record. A soft "done", distinct from the reviewer's
+  hard delete.
+
 ## GitHub integration
 - **PR comments** — `fetch_comments.py` pulls inline + conversation comments;
   bodies rendered to HTML by GitHub's own `/markdown` API (GFM, mentions).
@@ -110,6 +124,9 @@ Built 2026-07-22 → 2026-07-24.
   per-file Viewed checkboxes via the `markFileAsViewed` GraphQL mutation,
   fire-and-forget.
 - PR box in the nav with a deep link to the PR.
+- **Comment-count badges** — a 💬 N badge on each section/file/hunk header
+  surfaces comments that would otherwise be invisible inside a collapsed unit
+  (counts root + replies per thread).
 
 ## Tooling
 - `scripts/server.py` — stdlib http + sqlite; flags: `--exit-on-drift`,
@@ -118,5 +135,7 @@ Built 2026-07-22 → 2026-07-24.
 - `scripts/sections.py` — CRUD CLI for sections.json (sections, files,
   extra hunks, prune) so edits cost commands, not JSON rewrites.
 - `scripts/fetch_comments.py` — PR comments → comments.json.
+- `scripts/notes.py` — read local notes from review.db (`list` md/json, `count`),
+  `resolve <id…>` handled ones (`list --all` keeps the record).
 - `scripts/selftest.py` — end-to-end smoke test in a throwaway repo (render,
-  serve, marks, migration, drift, delta, backfill, badges): prints `PASS`.
+  serve, marks, migration, drift, delta, backfill, badges, notes): prints `PASS`.

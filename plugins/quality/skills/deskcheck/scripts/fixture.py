@@ -137,6 +137,15 @@ DEFAULT_FEATURE = {
         '    </div>\n'
         '  );\n'
         '}\n',
+    # new test file, so the module map shows tokens.py "tested by" this and
+    # leaves session.py untested (⚠)
+    'src/auth/test_tokens.py':
+        'from src.auth.tokens import issue_token\n\n\n'
+        'def test_rotation_revokes_prior():\n'
+        '    first = issue_token("u1")\n'
+        '    second = issue_token("u1", rotate_from=first)\n'
+        '    assert first["revoked"] is True\n'
+        '    assert second["rotated_from"] == first["value"]\n',
 }
 DEFAULT_SECTIONS = {
     'title': 'Refresh-token rotation + webhook idempotency',
@@ -145,7 +154,8 @@ DEFAULT_SECTIONS = {
         {'id': 'auth', 'title': 'Token rotation & session', 'difficulty': 5,
          'summary': 'Rotate the refresh token on every use and revoke the prior '
                     'one; issue a token on login. Read this first.',
-         'files': ['src/auth/tokens.py', 'src/auth/session.py']},
+         'files': ['src/auth/tokens.py', 'src/auth/test_tokens.py',
+                   'src/auth/session.py']},
         {'id': 'api', 'title': 'Webhook idempotency', 'difficulty': 3,
          'summary': 'Guard the webhook handler against duplicate deliveries.',
          'files': ['src/api/handlers.py']},

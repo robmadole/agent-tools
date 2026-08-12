@@ -35,6 +35,11 @@ from render_diff import (_diff_entries, _git, _lexer_for, context_rows,
 from fetch_comments import render_md  # GFM → HTML via GitHub's /markdown endpoint
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
+ASSET_TYPES = {
+    '.js': 'application/javascript; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.woff2': 'font/woff2',
+}
 LOCK = threading.Lock()
 # bump when render output changes for the same content, so cached hunk HTML
 # from an older renderer can't be served
@@ -61,8 +66,82 @@ def open_db(workspace):
         ' content TEXT NOT NULL,'
         " taken_at TEXT NOT NULL DEFAULT (datetime('now')))"
     )
+    # local review notes — private to the reviewer, never sent to GitHub.
+    # Line-anchored like inline comments (path+line+side), but stored here so
+    # they work with no PR and the agent can read them straight from the db.
+    con.execute(
+        'CREATE TABLE IF NOT EXISTS notes ('
+        ' id INTEGER PRIMARY KEY AUTOINCREMENT,'
+        ' path TEXT NOT NULL,'
+        ' line INTEGER NOT NULL,'
+        " side TEXT NOT NULL DEFAULT 'RIGHT',"
+        ' body TEXT NOT NULL,'
+        " created_at TEXT NOT NULL DEFAULT (datetime('now')),"
+        " updated_at TEXT NOT NULL DEFAULT (datetime('now')),"
+        ' resolved_at TEXT)'  # NULL = open; set once the agent acts on it
+    )
+    # migrate note tables created before resolved_at existed
+    if not any(r[1] == 'resolved_at' for r in con.execute('PRAGMA table_info(notes)')):
+        con.execute('ALTER TABLE notes ADD COLUMN resolved_at TEXT')
     con.commit()
     return con
+
+
+NOTE_COLS = ('id', 'path', 'line', 'side', 'body', 'created_at', 'updated_at')
+
+
+def read_notes(con):
+    # only open notes reach the UI — resolved ones stay in the db as a record
+    with LOCK:
+        rows = con.execute(
+            'SELECT id, path, line, side, body, created_at, updated_at '
+            'FROM notes WHERE resolved_at IS NULL ORDER BY path, line, id').fetchall()
+    return [dict(zip(NOTE_COLS, r)) for r in rows]
+
+
+def _note_row(con, nid):
+    row = con.execute('SELECT id, path, line, side, body, created_at, updated_at '
+                      'FROM notes WHERE id=?', (nid,)).fetchone()
+    return dict(zip(NOTE_COLS, row)) if row else None
+
+
+def add_note(con, req):
+    path = (req.get('path') or '').strip()
+    body = (req.get('body') or '').strip()
+    line = req.get('line')
+    side = 'LEFT' if req.get('side') == 'LEFT' else 'RIGHT'
+    if not path or not body or not isinstance(line, int) or isinstance(line, bool):
+        return 400, {'ok': False, 'detail': 'note needs path, integer line, and body'}
+    with LOCK:
+        cur = con.execute('INSERT INTO notes(path, line, side, body) VALUES(?,?,?,?)',
+                          (path, line, side, body))
+        con.commit()
+        note = _note_row(con, cur.lastrowid)
+    return 200, {'ok': True, 'note': note}
+
+
+def edit_note(con, req):
+    nid, body = req.get('id'), (req.get('body') or '').strip()
+    if not isinstance(nid, int) or not body:
+        return 400, {'ok': False, 'detail': 'edit needs id and body'}
+    with LOCK:
+        cur = con.execute("UPDATE notes SET body=?, updated_at=datetime('now') WHERE id=?",
+                          (body, nid))
+        con.commit()
+        if not cur.rowcount:
+            return 404, {'ok': False, 'detail': 'no such note'}
+        note = _note_row(con, nid)
+    return 200, {'ok': True, 'note': note}
+
+
+def delete_note(con, req):
+    nid = req.get('id')
+    if not isinstance(nid, int):
+        return 400, {'ok': False, 'detail': 'delete needs id'}
+    with LOCK:
+        con.execute('DELETE FROM notes WHERE id=?', (nid,))
+        con.commit()
+    return 200, {'ok': True}
 
 
 def read_state(con):
@@ -198,6 +277,7 @@ def build_page(args, con):
         'state': read_state(con),
         'comments': json.loads(cpath.read_text()) if cpath.exists() else None,
         'comments_rev': cpath.stat().st_mtime if cpath.exists() else 0,
+        'notes': read_notes(con),
     }
     return render_template(data).encode()
 
@@ -239,6 +319,22 @@ def refresh_comments(args):
         [sys.executable, str(SKILL_DIR / 'scripts' / 'fetch_comments.py'),
          '--workspace', args.workspace, '--repo', args.repo],
         capture_output=True, text=True)
+
+
+def generate_diagrams(args):
+    """(Re)build <workspace>/diagrams.json via the standalone diagram.py.
+
+    Fire-and-forget from a daemon thread on startup so the module maps never
+    block serving — the client polls /api/diagrams and renders when they land.
+    """
+    r = subprocess.run(
+        [sys.executable, str(SKILL_DIR / 'scripts' / 'diagram.py'),
+         '--workspace', args.workspace, '--repo', args.repo,
+         '--target', args.target],
+        capture_output=True, text=True)
+    if r.returncode != 0:
+        print('diagram generation failed: '
+              + (r.stderr or r.stdout).strip(), flush=True)
 
 
 def post_comment(args, req):
@@ -481,6 +577,25 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(500, f'<pre>{type(e).__name__}: {e}</pre>'.encode())
                 return
             self._send(200, body)
+        elif url.path.startswith('/assets/'):
+            # static files served from the skill's assets/ dir, so the page
+            # needn't inline them (mermaid's 3MB, the fonts' 50KB, …).
+            name = url.path[len('/assets/'):]
+            ctype = ASSET_TYPES.get(Path(name).suffix)
+            # basename-only + known extension: no traversal, no arbitrary reads
+            if '/' in name or not ctype:
+                self._send(404, b'not found')
+                return
+            try:
+                body = (SKILL_DIR / 'assets' / name).read_bytes()
+            except OSError:
+                self._send(404, b'not found')
+                return
+            self._send(200, body, ctype)
+        elif url.path == '/api/diagrams':
+            dpath = Path(self.args.workspace) / 'diagrams.json'
+            body = dpath.read_bytes() if dpath.exists() else b'{"sections":{}}'
+            self._send(200, body, 'application/json')
         elif url.path == '/api/state':
             self._send(200, json.dumps(read_state(self.con)).encode(),
                        'application/json')
@@ -543,6 +658,18 @@ class Handler(BaseHTTPRequestHandler):
             fn = {'/api/add-comment': post_comment, '/api/edit-comment': edit_comment,
                   '/api/delete-comment': delete_comment}[self.path]
             code, resp = fn(self.args, req)
+            self._send(code, json.dumps(resp).encode(), 'application/json')
+            return
+        if self.path in ('/api/add-note', '/api/edit-note', '/api/delete-note'):
+            try:
+                n = int(self.headers.get('Content-Length', 0))
+                req = json.loads(self.rfile.read(n))
+            except Exception:
+                self._send(400, b'bad request')
+                return
+            fn = {'/api/add-note': add_note, '/api/edit-note': edit_note,
+                  '/api/delete-note': delete_note}[self.path]
+            code, resp = fn(self.con, req)
             self._send(code, json.dumps(resp).encode(), 'application/json')
             return
         if self.path != '/api/toggle':
@@ -619,6 +746,10 @@ def main():
     Handler.con = open_db(args.workspace)
     Handler.base = merge_base(args.repo, args.target)
     migrate_legacy_keys(Handler.con, args.repo, args.target, Handler.base)
+
+    # Build the per-section module maps off the request path — the page serves
+    # immediately and the client polls /api/diagrams for them.
+    threading.Thread(target=generate_diagrams, args=(args,), daemon=True).start()
 
     if args.exit_on_drift:
         threading.Thread(target=drift_watch, args=(args, args.drift_interval),

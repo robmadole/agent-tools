@@ -54,6 +54,14 @@ regeneration and hunk reshuffling, and automatically invalidate when the
 underlying change actually changes — a file whose mark went stale shows a
 "changed since review" badge.
 
+On a resume — and after any drift-relaunch — also check for notes the reviewer
+left: `scripts/notes.py --workspace "$WS" count`. If it's above zero, tell the
+user ("you have N local notes") and offer to read them (`… list`) — see
+**Local notes** below. These re-engagement points are the only moments you can
+notice notes; nothing pushes them to you (the reviewer writing a note doesn't
+wake you), so the reviewer is the real trigger — which is why the hand-off
+below tells them to ping you when they want notes acted on.
+
 ## 3. Build sections.json — the actual thinking
 
 This is the step where you earn your keep, so read the diff for real:
@@ -153,6 +161,13 @@ The server binds a free port (no `--port` needed) and prints
 from the background process's output to learn the actual port — use it for the
 curl check, the browser open, and the URL you give the user.
 
+On startup the server also spawns `scripts/diagram.py` in the background to
+build a per-section **module map** (files as nodes, source→test links, an ⚠ on
+untested sources, clickable to jump to the diff). This never blocks serving —
+the page loads immediately and the map fills in a moment later. No action
+needed from you; it regenerates on every launch (so resume and drift-relaunch
+stay current).
+
 When the branch has a PR, add `--github-sync --watch-comments` too:
 `--watch-comments` ETag-polls the PR every 60s (304s are rate-limit-free) and
 auto-refreshes comments.json when comment counts change; the UI then shows a
@@ -161,13 +176,21 @@ auto-refreshes comments.json when comment counts change; the UI then shows a
 Run it in the background. `--exit-on-drift` makes the process itself the drift
 monitor: when changed files appear that no section covers (stable across two
 30s polls), it prints `DRIFT_DETECTED: … <files>` and **exits with code 42**.
-Your background-task notification for that exit is the signal — read the
-DRIFT_DETECTED line, fold the listed files into sections.json, and relaunch —
-but add `--port <the port from the original "Serving on" line>` so the restart
-reuses the same port instead of drifting to a new one (the user's browser tab
-is still open on the old URL). Then tell the user what was added. Any other exit code is
-not drift (144 ≈ killed). If nobody is listening when it fires, nothing is
-lost: the user reruns the skill and the resume flow picks up the drift.
+**Exit 42 is normal, expected, successful operation — the flag doing exactly
+its job, not an error, a crash, or a sign anything is wrong.** A branch under
+active development will trip it again and again; frequent drift is precisely the
+churn this flag exists to surface. High churn is the flag *working*, never a
+reason to back off from it. Your background-task notification for that exit is
+the signal — read the DRIFT_DETECTED line, fold the listed files into
+sections.json, and relaunch **always with `--exit-on-drift` kept on** (plus
+`--port <the port from the original "Serving on" line>` so the restart reuses
+the same port instead of drifting to a new one; the user's browser tab is still
+open on the old URL). Then tell the user what was added, and simply relaunch
+again the next time it fires. **Never drop `--exit-on-drift` to quiet the
+wake-ups, no matter how often they come — removing it silently blinds the review
+to every new change and defeats the whole point of running it.** Any other exit
+code is not drift (144 ≈ killed). If nobody is listening when it fires, nothing
+is lost: the user reruns the skill and the resume flow picks up the drift.
 
 **GitHub sync**: when the branch has a PR (`gh pr view` succeeds), add
 `--github-sync` to the server command — local *file* marks then mirror to the
@@ -202,8 +225,43 @@ user:
 - the URL, and that the review lives entirely on their machine
 - progress saves on every click; killing the server loses nothing — rerun the
   skill on the same branch to resume
+- they can leave **private notes** on any line (the line-number `+` →
+  "Private note") — local-only, never sent to GitHub. **You won't know a note
+  exists until they tell you**, so ask them to ping you ("write up my notes",
+  "turn my notes into PR comments") when they want you to act on them; you'll
+  read them back with `scripts/notes.py`
 
 Leave the server running; don't kill it when the conversation moves on.
+
+## Local notes (private, and readable by you)
+
+Separate from GitHub comments, the reviewer can leave **local notes** —
+private, line-anchored annotations that never touch GitHub and need no PR. In
+the UI, the line-number "+" opens a composer with a **PR comment | Private
+note** toggle (note-only when there's no PR); notes render as purple cards
+inline, marked "saved locally". They live in
+`$WS/review.db`, so **you can read them and act on them** when the user asks
+("write up my notes", "turn these into PR comments", "start fixing what I
+flagged"):
+
+```bash
+scripts/notes.py --workspace "$WS" list            # open notes, "[#id] file:line — body"
+scripts/notes.py --workspace "$WS" list --format json
+scripts/notes.py --workspace "$WS" count           # open count, for the resume nudge
+scripts/notes.py --workspace "$WS" resolve 3 7     # mark #3 and #7 handled
+scripts/notes.py --workspace "$WS" list --all      # include resolved (the record)
+```
+
+**Resolve a note once you've acted on it.** After you make the fix, post the
+comment, or otherwise satisfy a note, run `resolve <id…>` (ids are the `#N` in
+`list`). Resolved notes drop out of the UI on the reviewer's next load and stop
+showing in `list`/`count`, so they never get re-processed — but they stay in
+the db (`list --all`) as a record of what you addressed. Resolve only the notes
+you genuinely handled; leave the rest open. (The reviewer can still hard-delete
+a note from the UI; resolve is your soft "done".)
+
+This is **pull, not push**: nothing wakes you when a note is written — you read
+them on demand when the user asks, and surface the count on resume (step 2).
 
 ## UI semantics (so you can explain them)
 
@@ -229,14 +287,31 @@ badge instead of staying silently green.
 Collapsed context between hunks (and above the first hunk / below the last)
 shows a clickable "↕ N hidden lines" strip that unfolds those lines in ~20-line
 chunks (served from `/api/context`). When a PR exists,
-hovering a diff line's number shows a "+" to add an inline comment, and each
-thread has a "Reply…" field at its foot (see the GitHub section).
+hovering a **new-side** diff line's number shows a "+" to add an inline comment
+(the old side offers it only on pure-deletion rows, so context lines don't show
+two identical buttons), and each thread has a "Reply…" field at its foot (see
+the GitHub section).
+
+When a PR's comments live inside a collapsed hunk, file, or section, a
+**comment-count badge** (💬 N) on that header surfaces them so they aren't lost
+behind the collapse.
+
+**Keyboard shortcuts** — a ⌨ button at the top-right (and the `?` key) opens a
+shortcuts panel: `j`/`k` move focus by hunk, `[`/`]` by section, `Space`
+collapses/expands the focused item, `m` marks it reviewed and advances, `Esc`
+closes the panel or clears focus. Focus lands on any reviewable node (section,
+file, or hunk) with a highlight outline; keys are ignored while typing in a
+comment composer.
 
 ## Scripts
 
 - `scripts/server.py` — the review server (stdlib http.server + sqlite)
 - `scripts/render_diff.py` — standalone: file + target → syntax-highlighted
   HTML hunks (used by the server, also composable on its own)
+- `scripts/diagram.py` — standalone: sections.json + diff → `diagrams.json`, a
+  per-section Mermaid module map (source↔test pairing, untested-source ⚠,
+  directory grouping, click-to-jump). The server spawns it in the background on
+  startup; `--check` self-tests
 - `scripts/sections.py` — CRUD CLI for sections.json (list / show /
   add-section / update-section / remove-section / add-files / remove-files /
   add-hunk / remove-hunk / prune). Author the initial sections.json with one
@@ -244,6 +319,9 @@ thread has a "Reply…" field at its foot (see the GitHub section).
   that — cheaper and safer than rewriting the file
 - `scripts/fetch_comments.py` — pull a PR's inline + conversation comments
   from GitHub (via `gh`) into the workspace's comments.json
+- `scripts/notes.py` — read the reviewer's local notes out of `review.db`
+  (`list` as markdown/json, `count`), and `resolve <id…>` the ones you've acted
+  on so they drop from the UI (kept in the db via `list --all`)
 - `scripts/selftest.py` — end-to-end smoke test in a throwaway repo; run it if
   you suspect the plumbing (prints `PASS`)
 - `scripts/fixture.py` — maintainer harness for iterating on the review UI:
