@@ -41,6 +41,54 @@ def fetch_all(repo, endpoint):
         page += 1
 
 
+# Thread resolution isn't in the REST comments API — only GraphQL exposes it,
+# and the resolve/unresolve mutations are keyed by the thread's node id, so we
+# capture both isResolved and that id here.
+_THREADS_Q = '''query($owner:String!,$name:String!,$num:Int!,$cursor:String){
+  repository(owner:$owner,name:$name){ pullRequest(number:$num){
+    reviewThreads(first:100, after:$cursor){
+      nodes{ id isResolved comments(first:100){ nodes{ databaseId } } }
+      pageInfo{ hasNextPage endCursor } } } } }'''
+
+
+def _index_from_threads(nodes):
+    """{ REST comment id -> {resolved, thread_id} } from reviewThreads nodes."""
+    out = {}
+    for t in nodes:
+        info = {'resolved': bool(t.get('isResolved')), 'thread_id': t.get('id')}
+        for c in t.get('comments', {}).get('nodes', []):
+            if c.get('databaseId') is not None:
+                out[c['databaseId']] = info
+    return out
+
+
+def threads_index(repo, slug, n):
+    """Map each inline comment id to its thread's {resolved, thread_id}.
+
+    Best-effort: any GraphQL failure (perms, etc.) yields {}, so resolution
+    simply doesn't show — the rest of the fetch is unaffected."""
+    owner, _, name = slug.partition('/')
+    out, cursor = {}, None
+    for _ in range(30):  # page guard
+        args = ['api', 'graphql', '-f', 'query=' + _THREADS_Q,
+                '-F', 'owner=' + owner, '-F', 'name=' + name, '-F', f'num={n}']
+        if cursor:
+            args += ['-F', 'cursor=' + cursor]
+        r = subprocess.run(['gh', *args], cwd=repo, capture_output=True, text=True)
+        if r.returncode != 0:
+            return {}
+        try:
+            threads = json.loads(r.stdout)['data']['repository']['pullRequest']['reviewThreads']
+        except (KeyError, TypeError, json.JSONDecodeError):
+            return out
+        out.update(_index_from_threads(threads.get('nodes', [])))
+        pi = threads.get('pageInfo', {})
+        if not pi.get('hasNextPage'):
+            return out
+        cursor = pi['endCursor']
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--workspace', required=True)
@@ -57,6 +105,7 @@ def main():
 
     inline = fetch_all(a.repo, f'repos/{slug}/pulls/{n}/comments')
     conv = fetch_all(a.repo, f'repos/{slug}/issues/{n}/comments')
+    tidx = threads_index(a.repo, slug, n)  # comment id -> {resolved, thread_id}
     # who's viewing — lets the UI offer edit/delete only on their own comments,
     # and gives the reply box the viewer's avatar
     vr = subprocess.run(['gh', 'api', 'user'],
@@ -79,6 +128,8 @@ def main():
         'inline': [{
             'id': c['id'],  # parent id for in_reply_to when replying
             'in_reply_to_id': c.get('in_reply_to_id'),  # thread linkage (None on roots)
+            'resolved': tidx.get(c['id'], {}).get('resolved', False),  # resolved on GitHub?
+            'thread_id': tidx.get(c['id'], {}).get('thread_id'),  # GraphQL id for mutations
             'path': c.get('path'),
             'line': c.get('line') or c.get('original_line'),
             'side': c.get('side') or 'RIGHT',

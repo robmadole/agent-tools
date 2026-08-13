@@ -54,13 +54,12 @@ regeneration and hunk reshuffling, and automatically invalidate when the
 underlying change actually changes — a file whose mark went stale shows a
 "changed since review" badge.
 
-On a resume — and after any drift-relaunch — also check for notes the reviewer
-left: `scripts/notes.py --workspace "$WS" count`. If it's above zero, tell the
+On a resume — and whenever drift folds in new files — also check for notes the
+reviewer left: `scripts/notes.py --workspace "$WS" count`. If it's above zero, tell the
 user ("you have N local notes") and offer to read them (`… list`) — see
-**Local notes** below. These re-engagement points are the only moments you can
-notice notes; nothing pushes them to you (the reviewer writing a note doesn't
-wake you), so the reviewer is the real trigger — which is why the hand-off
-below tells them to ping you when they want notes acted on.
+**Local notes** below. While the drift/notes Monitor (§4) is running a new note
+also wakes you live via a `PRIVATE_NOTE_ADDED` line; the resume count still
+matters for notes left while nothing was watching (e.g. between sessions).
 
 ## 3. Build sections.json — the actual thinking
 
@@ -132,9 +131,10 @@ content changes to sectioned files just appear (and content-hash marks
 invalidate where the content really changed). Files that change but appear in
 no section are collected automatically into a synthetic **"Unsectioned
 changes"** section at the bottom — reviewable immediately, so nothing escapes.
-With `--exit-on-drift` the server also exits 42 to wake you (see step 4).
-When that fires — or the user mentions drift, or you see unsectioned files on
-a resume — read the new files' diffs and fold them in **via the CLI, not by
+With `--watch-drift` the server also prints `DRIFT_DETECTED` (and keeps serving)
+to wake you via the Monitor (see step 4). When that fires — or the user mentions
+drift, or you see unsectioned files on a resume — read the new files' diffs and
+fold them in **via the CLI, not by
 rewriting the JSON**: `scripts/sections.py --workspace "$WS" add-files <id>
 <paths…>` (or `add-section` first if none fits). The server picks the edit up
 on the next reload, and existing marks survive because keys are
@@ -153,44 +153,66 @@ by the branch* is different — that still has a real deletion diff to review.)
 ```bash
 PY="python3"; command -v uv >/dev/null && PY="uv run --with pygments"
 $PY <skill-dir>/scripts/server.py --workspace "$WS" --repo <repo-root> \
-    --target <target> --exit-on-drift
+    --target <target> --watch-drift
 ```
 
-The server binds a free port (no `--port` needed) and prints
-`Serving on http://127.0.0.1:<PORT>` to stdout on startup. Read that line
-from the background process's output to learn the actual port — use it for the
-curl check, the browser open, and the URL you give the user.
+Run it as a **tracked background task** (so a genuine crash or kill reaches you
+as a task-exit notification — see drift below). The server binds a free port
+(no `--port` needed) and prints `Serving on http://127.0.0.1:<PORT>` to stdout
+on startup. Read that line from the background task's **output file** to learn
+the actual port — use it for the curl check, the browser open, the URL you give
+the user, and as the file the drift Monitor tails.
 
 On startup the server also spawns `scripts/diagram.py` in the background to
 build a per-section **module map** (files as nodes, source→test links, an ⚠ on
 untested sources, clickable to jump to the diff). This never blocks serving —
 the page loads immediately and the map fills in a moment later. No action
-needed from you; it regenerates on every launch (so resume and drift-relaunch
-stay current).
+needed from you; it regenerates on every launch (so a resumed review stays
+current).
 
 When the branch has a PR, add `--github-sync --watch-comments` too:
 `--watch-comments` ETag-polls the PR every 60s (304s are rate-limit-free) and
 auto-refreshes comments.json when comment counts change; the UI then shows a
 "New comments — reload" pill.
 
-Run it in the background. `--exit-on-drift` makes the process itself the drift
-monitor: when changed files appear that no section covers (stable across two
-30s polls), it prints `DRIFT_DETECTED: … <files>` and **exits with code 42**.
-**Exit 42 is normal, expected, successful operation — the flag doing exactly
-its job, not an error, a crash, or a sign anything is wrong.** A branch under
-active development will trip it again and again; frequent drift is precisely the
-churn this flag exists to surface. High churn is the flag *working*, never a
-reason to back off from it. Your background-task notification for that exit is
-the signal — read the DRIFT_DETECTED line, fold the listed files into
-sections.json, and relaunch **always with `--exit-on-drift` kept on** (plus
-`--port <the port from the original "Serving on" line>` so the restart reuses
-the same port instead of drifting to a new one; the user's browser tab is still
-open on the old URL). Then tell the user what was added, and simply relaunch
-again the next time it fires. **Never drop `--exit-on-drift` to quiet the
-wake-ups, no matter how often they come — removing it silently blinds the review
-to every new change and defeats the whole point of running it.** Any other exit
-code is not drift (144 ≈ killed). If nobody is listening when it fires, nothing
-is lost: the user reruns the skill and the resume flow picks up the drift.
+**Watch for drift and notes.** With `--watch-drift`, whenever changed files
+appear that no section covers (stable across two 30s polls), the server prints a
+single `DRIFT_DETECTED: N unsectioned file(s): <paths>` line **and keeps
+serving** — it never dies, and the user's browser stays live. It also prints a
+`PRIVATE_NOTE_ADDED` / `PRIVATE_NOTE_EDITED` / `PRIVATE_NOTE_DELETED` line (each
+`note #<id> at <path>:<line>`) the instant the reviewer saves, changes, or
+removes a private note. Start a **persistent Monitor** on the server's output
+file so all of them reach you the moment they happen:
+
+```bash
+tail -f <server-task-output-file> | grep -E --line-buffered 'DRIFT_DETECTED|PRIVATE_NOTE_'
+```
+
+A `DRIFT_DETECTED` line is your cue to read the listed paths, fold them into
+sections with `scripts/sections.py … add-files <id> <paths>` (§3), and tell the
+user what was added. **No restart, no relaunch, no port juggling** — the server
+re-reads `sections.json` and re-diffs on every request, so the reviewer sees the
+update on their next refresh or scroll.
+
+A `PRIVATE_NOTE_*` line means the reviewer touched a note mid-review. On `ADDED`
+or `EDITED`, read the current note with `scripts/notes.py … list`, act on it,
+and `resolve` it — the **Local notes** flow you'd otherwise run on resume, now
+without waiting for a resume or a ping. On `DELETED` the reviewer withdrew it: if
+you hadn't acted yet, just drop it (there's nothing left to resolve).
+
+A branch under active development trips this again and again; frequent drift is
+the churn this exists to surface, never a reason to stop watching. **Keep the
+Monitor running for the whole review** — dropping it silently blinds you to
+every new change and defeats the point.
+
+Two signals, both push (no polling): the **Monitor** delivers drift while the
+server keeps serving; a **task-exit notification** means the server *genuinely
+died* (crash, OOM, a `git` blow-up, the user killed it — not drift anymore).
+Only a real death warrants a relaunch — reuse `--port <the port from the
+"Serving on" line>` so the open browser tab reconnects, keep `--watch-drift` on,
+and restart the Monitor on the new task's output file. (The Monitor greps only
+`DRIFT_DETECTED`, not crash signatures, precisely because the task-exit
+notification already covers death — don't widen it.)
 
 **GitHub sync**: when the branch has a PR (`gh pr view` succeeds), add
 `--github-sync` to the server command — local *file* marks then mirror to the
@@ -226,10 +248,10 @@ user:
 - progress saves on every click; killing the server loses nothing — rerun the
   skill on the same branch to resume
 - they can leave **private notes** on any line (the line-number `+` →
-  "Private note") — local-only, never sent to GitHub. **You won't know a note
-  exists until they tell you**, so ask them to ping you ("write up my notes",
-  "turn my notes into PR comments") when they want you to act on them; you'll
-  read them back with `scripts/notes.py`
+  "Private note") — local-only, never sent to GitHub. While the review is live
+  you're notified the moment they save one (the Monitor, §4) and can act right
+  away; you read notes back with `scripts/notes.py`. They can still just ask
+  ("write up my notes", "turn my notes into PR comments") to trigger a batch.
 
 Leave the server running; don't kill it when the conversation moves on.
 
@@ -260,8 +282,11 @@ the db (`list --all`) as a record of what you addressed. Resolve only the notes
 you genuinely handled; leave the rest open. (The reviewer can still hard-delete
 a note from the UI; resolve is your soft "done".)
 
-This is **pull, not push**: nothing wakes you when a note is written — you read
-them on demand when the user asks, and surface the count on resume (step 2).
+With the drift/notes Monitor running (§4), a saved, edited, or deleted note
+**pushes** you a `PRIVATE_NOTE_*` line so you can act on it live. Without it —
+before you've re-armed the Monitor on a resume, or for notes left between
+sessions — it's pull: read them on demand when the user asks, and surface the
+count on resume (step 2).
 
 ## UI semantics (so you can explain them)
 
@@ -294,7 +319,13 @@ the GitHub section).
 
 When a PR's comments live inside a collapsed hunk, file, or section, a
 **comment-count badge** (💬 N) on that header surfaces them so they aren't lost
-behind the collapse.
+behind the collapse. Threads already **resolved** on GitHub collapse into a
+quiet "Resolved · N" bar (click to expand) and drop out of the badge count — so
+the badge counts only *unresolved* discussion. Resolution is read from GitHub
+by `fetch_comments.py` (via GraphQL, which is the only API that exposes it);
+rerun it to refresh resolved state. With a PR, the reviewer can **resolve /
+unresolve** a thread from a button in its foot (opposite Reply) — it runs the
+GraphQL mutation, refreshes comments, and reloads.
 
 **Keyboard shortcuts** — a ⌨ button at the top-right (and the `?` key) opens a
 shortcuts panel: `j`/`k` move focus by hunk, `[`/`]` by section, `Space`

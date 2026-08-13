@@ -105,6 +105,15 @@ def main():
     assert 'Unsectioned changes' in page2 and 'extra.py' in page2
     assert srv.unsectioned_now(srv.Handler.args) == ['extra.py']
 
+    # drift announce-once: fires only when stable across two polls, never twice
+    # for the same set, and re-arms after the set clears (all folded in)
+    d = ['extra.py']
+    assert not srv._should_announce(d, None, None), 'first sighting: not stable'
+    assert srv._should_announce(d, d, None), 'stable + new: announce'
+    assert not srv._should_announce(d, d, d), 'already announced: stay quiet'
+    assert srv._should_announce(d, d, ['other.py']), 'different set: announce'
+    assert not srv._should_announce([], [], None), 'empty set: nothing to announce'
+
     # comments.json (from fetch_comments.py) is embedded into the page
     (ws / 'comments.json').write_text(json.dumps({
         'pr': 1, 'title': 't', 'url': 'u',
@@ -250,6 +259,39 @@ def main():
     assert notes_cli.read_notes(str(ws)) == [], 'resolved note still listed'
     assert len(notes_cli.read_notes(str(ws), include_resolved=True)) == 1
     assert srv.read_notes(srv.Handler.con) == [], 'resolved note still in page data'
+
+    # resolved-thread parse: GraphQL reviewThreads -> {comment id: {resolved, thread_id}}
+    import fetch_comments as fc
+    idx = fc._index_from_threads([
+        {'id': 'T1', 'isResolved': True,
+         'comments': {'nodes': [{'databaseId': 10}, {'databaseId': 11}]}},
+        {'id': 'T2', 'isResolved': False, 'comments': {'nodes': [{'databaseId': 20}]}},
+    ])
+    assert idx[10] == {'resolved': True, 'thread_id': 'T1'}, idx
+    assert idx[11]['thread_id'] == 'T1' and idx[20] == {'resolved': False, 'thread_id': 'T2'}, idx
+
+    # note signals: add/edit/delete each emit one PRIVATE_NOTE_* stdout line;
+    # rejected/no-op calls stay silent
+    import io
+    from contextlib import redirect_stdout
+    ndb = srv.open_db(tempfile.mkdtemp(prefix='deskcheck-notesig-'))
+
+    def emit(fn, req):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            code, _ = fn(ndb, req)
+        return code, buf.getvalue()
+
+    code, out = emit(srv.add_note, {'path': 'a.py', 'line': 5, 'body': 'look'})
+    assert code == 200 and 'PRIVATE_NOTE_ADDED: note #1 at a.py:5' in out, out
+    code, out = emit(srv.edit_note, {'id': 1, 'body': 'changed'})
+    assert code == 200 and 'PRIVATE_NOTE_EDITED: note #1 at a.py:5' in out, out
+    code, out = emit(srv.delete_note, {'id': 1})
+    assert code == 200 and 'PRIVATE_NOTE_DELETED: note #1 at a.py:5' in out, out
+    code, out = emit(srv.add_note, {'path': 'a.py', 'body': 'no line'})
+    assert code == 400 and out == '', (code, out)
+    code, out = emit(srv.delete_note, {'id': 999})
+    assert code == 200 and out == '', (code, out)
 
     httpd.shutdown()
     shutil.rmtree(tmp)

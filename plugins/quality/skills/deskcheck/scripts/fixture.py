@@ -450,10 +450,12 @@ def t_push_remote(repo, ws, port, slug=None):
        'origin', url)
     sh(repo, 'git', 'push', '--force', '-u', 'origin', 'main')
     sh(repo, 'git', 'push', '--force', '-u', 'origin', 'feature')
-    view = subprocess.run(['gh', 'pr', 'view', '--json', 'url', '-q', '.url'],
+    # reuse only an OPEN PR; a closed/merged one must not be resurrected — make a fresh PR
+    view = subprocess.run(['gh', 'pr', 'view', '--json', 'url,state',
+                           '-q', 'select(.state=="OPEN") | .url'],
                           cwd=str(repo), capture_output=True, text=True)
     if view.returncode == 0 and view.stdout.strip():
-        return f'pushed main+feature to {slug}; reused PR {view.stdout.strip()}'
+        return f'pushed main+feature to {slug}; reused open PR {view.stdout.strip()}'
     pr_url = gh_out(repo, 'pr', 'create', '--base', 'main', '--head', 'feature',
                     '--title', 'deskcheck fixture PR',
                     '--body', 'Durable test PR for deskcheck real-PR features '

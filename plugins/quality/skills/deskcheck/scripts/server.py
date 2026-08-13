@@ -15,7 +15,6 @@ import argparse
 import difflib
 import hashlib
 import json
-import os
 import re
 import sqlite3
 import subprocess
@@ -117,6 +116,11 @@ def add_note(con, req):
                           (path, line, side, body))
         con.commit()
         note = _note_row(con, cur.lastrowid)
+    # Wake the agent live (same stdout-line-as-signal contract as drift): a
+    # reviewer note no longer waits for a resume or a ping. Body stays out of
+    # the line (may be multiline) — the agent pulls it with notes.py.
+    print('PRIVATE_NOTE_ADDED: note #%d at %s:%d' % (note['id'], path, line),
+          flush=True)
     return 200, {'ok': True, 'note': note}
 
 
@@ -131,6 +135,8 @@ def edit_note(con, req):
         if not cur.rowcount:
             return 404, {'ok': False, 'detail': 'no such note'}
         note = _note_row(con, nid)
+    print('PRIVATE_NOTE_EDITED: note #%d at %s:%d' % (nid, note['path'], note['line']),
+          flush=True)
     return 200, {'ok': True, 'note': note}
 
 
@@ -139,8 +145,12 @@ def delete_note(con, req):
     if not isinstance(nid, int):
         return 400, {'ok': False, 'detail': 'delete needs id'}
     with LOCK:
+        row = _note_row(con, nid)  # capture path/line before it's gone
         con.execute('DELETE FROM notes WHERE id=?', (nid,))
         con.commit()
+    if row:
+        print('PRIVATE_NOTE_DELETED: note #%d at %s:%d' % (nid, row['path'], row['line']),
+              flush=True)
     return 200, {'ok': True}
 
 
@@ -206,24 +216,34 @@ def unsectioned_now(args, base=None):
     return [f for f in changed if f not in paths]
 
 
-def drift_watch(args, interval):
-    """Exit the process with code 42 when drift persists across two polls.
+def _should_announce(cur, prev, announced):
+    """Announce a drift set once it's stable across two polls and not already
+    announced. cur/prev/announced are sorted path lists (or None)."""
+    return bool(cur) and cur == prev and cur != announced
 
-    The exit IS the signal: the harness that launched us in the background gets
-    a task notification with this code, wakes the LLM, and it re-sections and
-    relaunches. Debounced so a mid-pull/rebase transient doesn't fire it.
+
+def drift_watch(args, interval):
+    """Emit DRIFT_DETECTED when unsectioned changes persist across two polls.
+
+    The line — not a process exit — is the signal: the agent watches this
+    stdout with the Monitor tool and folds the listed files into sections.json
+    (the server picks that up on the next request; no restart). Debounced so a
+    mid-pull/rebase transient doesn't fire; announced once per distinct set,
+    re-announced only after the set clears (everything got folded in).
     """
-    prev = None
+    prev = announced = None
     while True:
         time.sleep(interval)
         try:
             cur = sorted(unsectioned_now(args))
         except Exception:
             continue
-        if cur and cur == prev:
+        if _should_announce(cur, prev, announced):
             print('DRIFT_DETECTED: %d unsectioned file(s): %s' %
                   (len(cur), ' '.join(cur)), flush=True)
-            os._exit(42)
+            announced = cur
+        if not cur:
+            announced = None
         prev = cur
 
 
@@ -430,6 +450,29 @@ def delete_comment(args, req):
         return 500, {'ok': False, 'detail': r.stderr.strip() or r.stdout.strip()}
     threading.Thread(target=refresh_comments, args=(args,), daemon=True).start()
     return 200, {'ok': True}
+
+
+def resolve_thread(args, req):
+    """Resolve / unresolve a PR review thread by its GraphQL node id.
+
+    Resolution lives only in GraphQL (REST can't touch it). `resolved: true`
+    resolves, `false` unresolves. Fires a background comments.json refresh so
+    the new state lands even though the client also updates optimistically."""
+    tid = req.get('thread_id')
+    if not tid:
+        return 400, {'ok': False, 'detail': 'thread_id required'}
+    mut = 'resolveReviewThread' if req.get('resolved') else 'unresolveReviewThread'
+    q = ('mutation($id:ID!){ %s(input:{threadId:$id}){ thread{ isResolved } } }' % mut)
+    r = subprocess.run(['gh', 'api', 'graphql', '-f', 'query=' + q, '-F', 'id=' + tid],
+                       cwd=args.repo, capture_output=True, text=True)
+    if r.returncode != 0:
+        return 500, {'ok': False, 'detail': (r.stderr or r.stdout).strip()[:300]}
+    try:
+        state = json.loads(r.stdout)['data'][mut]['thread']['isResolved']
+    except Exception:
+        state = bool(req.get('resolved'))
+    # caller refreshes comments.json + reloads, so no background refresh here
+    return 200, {'ok': True, 'resolved': state}
 
 
 def comments_watch(args, interval):
@@ -648,7 +691,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200 if r.returncode == 0 else 500, body.encode(),
                        'application/json')
             return
-        if self.path in ('/api/add-comment', '/api/edit-comment', '/api/delete-comment'):
+        if self.path in ('/api/add-comment', '/api/edit-comment', '/api/delete-comment',
+                         '/api/resolve-thread'):
             try:
                 n = int(self.headers.get('Content-Length', 0))
                 req = json.loads(self.rfile.read(n))
@@ -656,7 +700,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, b'bad request')
                 return
             fn = {'/api/add-comment': post_comment, '/api/edit-comment': edit_comment,
-                  '/api/delete-comment': delete_comment}[self.path]
+                  '/api/delete-comment': delete_comment,
+                  '/api/resolve-thread': resolve_thread}[self.path]
             code, resp = fn(self.args, req)
             self._send(code, json.dumps(resp).encode(), 'application/json')
             return
@@ -724,9 +769,10 @@ def main():
     ap.add_argument('--target', default='main')
     ap.add_argument('--port', type=int, default=0,
                     help='0 (default) = free OS-assigned port, printed on startup')
-    ap.add_argument('--exit-on-drift', action='store_true',
-                    help='exit 42 when unsectioned changes appear (the exit is '
-                         'the signal for a listening harness to re-section)')
+    ap.add_argument('--watch-drift', action='store_true',
+                    help='print DRIFT_DETECTED (and keep serving) when '
+                         'unsectioned changes appear; the agent watches this '
+                         'stdout with the Monitor tool and re-sections live')
     ap.add_argument('--drift-interval', type=float, default=30.0)
     ap.add_argument('--github-sync', action='store_true',
                     help="mirror local file marks to the PR's Viewed "
@@ -751,7 +797,7 @@ def main():
     # immediately and the client polls /api/diagrams for them.
     threading.Thread(target=generate_diagrams, args=(args,), daemon=True).start()
 
-    if args.exit_on_drift:
+    if args.watch_drift:
         threading.Thread(target=drift_watch, args=(args, args.drift_interval),
                          daemon=True).start()
     if args.watch_comments:

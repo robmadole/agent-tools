@@ -72,16 +72,18 @@ Built 2026-07-22 → 2026-07-24.
 ## Live repo awareness
 - **Drift detection** — files changed-but-unsectioned are collected into a
   synthetic "Unsectioned changes" section on every load; nothing escapes
-  review. With `--exit-on-drift`, the server *is* the monitor: it exits with
-  code 42 (debounced) and the harness wakes Claude to fold the new files into
-  sections via the CLI and relaunch.
+  review. With `--watch-drift`, the server prints `DRIFT_DETECTED` (debounced)
+  and **keeps serving**; Claude watches that stdout with the Monitor tool and
+  folds the new files into sections via the CLI — live, no restart.
 - **Retired files** — a sectioned file that stops differing renders as a
   grayed "no longer in diff" row; `sections.py prune` cleans them.
 - **Uncommitted-state badges** — blue `staged` / `edited` / `staged + edited`
   pills from `git status --porcelain`, so you know what might still move.
 - **Reconnecting overlay** — any failed XHR shows a centered spinner overlay,
-  probes every 2s, and reloads when the server returns (restarts are routine:
-  drift exits on purpose).
+  probes every 2s, and reloads when the server returns. The server no longer
+  dies on drift, so this only appears if it genuinely stops — after ~15s the
+  overlay escalates to an actionable "server stopped — ask Claude to restart"
+  message.
 
 ## Local notes
 - **Private, line-anchored notes** — separate from GitHub comments and needing
@@ -89,8 +91,10 @@ Built 2026-07-22 → 2026-07-24.
   note** toggle (note-only when there's no PR); notes render as purple cards
   inline ("saved locally"), with edit/delete. Stored in
   `review.db`, so the agent can read and act on them via
-  `notes.py list|count` — pull, not push: read on demand, count surfaced on
-  resume. The gutter "+" is always live because a note needs no PR.
+  `notes.py list|count`. With the drift Monitor running, add/edit/delete each
+  emit a `PRIVATE_NOTE_*` line so the agent is notified live; otherwise it's
+  pull (read on demand, count surfaced on resume). The gutter "+" is always
+  live because a note needs no PR.
 - **Resolve when handled** — after the agent acts on a note it runs
   `notes.py resolve <id>`; resolved notes drop out of the UI and out of
   `list`/`count` (so they're never re-processed) but stay in the db
@@ -127,9 +131,15 @@ Built 2026-07-22 → 2026-07-24.
 - **Comment-count badges** — a 💬 N badge on each section/file/hunk header
   surfaces comments that would otherwise be invisible inside a collapsed unit
   (counts root + replies per thread).
+- **Resolved threads** — threads resolved on GitHub (read via GraphQL, the only
+  API that exposes `isResolved`) collapse into a "Resolved · N" bar (click to
+  expand) and drop out of the badge count, so the badge means unresolved
+  discussion. **Resolve / Unresolve** from a button in the thread foot (opposite
+  Reply) via the `resolveReviewThread` / `unresolveReviewThread` mutations,
+  then a comments refresh + reload — mirrors the comment-write flow.
 
 ## Tooling
-- `scripts/server.py` — stdlib http + sqlite; flags: `--exit-on-drift`,
+- `scripts/server.py` — stdlib http + sqlite; flags: `--watch-drift`,
   `--github-sync`, `--watch-comments`, `--port`.
 - `scripts/render_diff.py` — standalone file→HTML-hunks renderer (composable).
 - `scripts/sections.py` — CRUD CLI for sections.json (sections, files,

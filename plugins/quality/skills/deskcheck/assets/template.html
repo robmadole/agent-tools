@@ -150,7 +150,9 @@
   a.gh-file-link:hover { color:var(--accent); }
   button.copy svg { margin:0; }
 
-  .sec { background:var(--panel); border:1px solid var(--border); border-radius:8px;
+  .sec { background:var(--panel); border:1px solid var(--border);
+         border-radius:8px 8px 0 0;  /* square bottom: sticky headers stack cleanly */
+         box-shadow:0 2px 6px color-mix(in srgb, var(--text) 12%, transparent);
          margin-bottom:20px; }
   /* emphasis via outline (not a thicker border) so toggling reviewed can't
      shift layout by a pixel; border stays 1px, just recolored. */
@@ -216,7 +218,7 @@
                        z-index:99; }
   .reconnect-box { display:flex; align-items:center; gap:10px; background:var(--panel);
                    border:1px solid var(--border); border-radius:8px; padding:14px 22px;
-                   font-weight:600; box-shadow:0 4px 24px rgba(31,35,40,.15); }
+                   font-weight:600; box-shadow:0 4px 24px color-mix(in srgb, var(--text) 15%, transparent); }
   .reconnect-box svg { animation:spin 1s linear infinite; }
   .delta-bar { display:flex; align-items:stretch; gap:10px; padding:8px 12px;
                background:#fff8c5; border-bottom:1px solid var(--border);
@@ -283,7 +285,7 @@
 
   /* inline threads: a card grouping root + replies + a reply field */
   .thread { border:1px solid var(--border); border-radius:8px; overflow:clip;
-            background:var(--panel); margin:0 8px; }
+            background:var(--panel); margin:0 8px 0 0; }
   /* replies nest under a thread line dropped from the root avatar's center */
   .thread-replies { margin-left:31px; border-left:2px solid var(--border); }
   .thread-replies:empty { display:none; }
@@ -299,7 +301,7 @@
                        color:var(--muted); background:var(--panel);
                        border:1px solid var(--border); border-radius:6px; }
   .thread-reply-collapsed:hover .thread-reply-pill { border-color:var(--muted); }
-  .thread-reply > .compose { flex:1 1 auto; padding:0; background:none; }
+  .thread-reply .compose { flex:1 1 auto; padding:0; background:none; }
 
   /* ---- compose / reply ---- */
   body.can-comment .diff td.ln { cursor:pointer; }
@@ -309,7 +311,7 @@
   .ln-add { position:fixed; margin:0; inset:auto; transform:translate(-50%,-50%);
             width:28px; height:28px; padding:0; border:none; border-radius:7px;
             cursor:pointer; background:var(--accent); color:#fff; line-height:1;
-            box-shadow:0 1px 4px rgba(31,35,40,.4); }
+            box-shadow:0 1px 4px color-mix(in srgb, var(--text) 40%, transparent); }
   .ln-add:popover-open { display:flex; align-items:center; justify-content:center; }
   .ln-add:hover { background:#0a5cc7; }
 
@@ -335,7 +337,7 @@
   .composer-row .compose { border:1px solid var(--border); border-radius:8px; }
   .compose textarea { width:100%; box-sizing:border-box; min-height:68px; resize:vertical;
                       font:inherit; font-size:13px; padding:8px; color:var(--text);
-                      border:1px solid var(--border); border-radius:6px; background:var(--bg); }
+                      border:1px solid var(--border); border-radius:6px; background:var(--panel); }
   .compose-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:8px; }
   .compose-actions button { border-radius:6px; padding:5px 14px; font-size:12px;
                             cursor:pointer; border:1px solid var(--border); }
@@ -385,11 +387,11 @@
   .file .kbd-focus { outline-offset:-2px; }
   #kbd-overlay { position:fixed; inset:0; z-index:50; display:none;
                  align-items:center; justify-content:center;
-                 background:rgba(31,35,40,.45); }
+                 background:color-mix(in srgb, var(--text) 45%, transparent); }
   #kbd-overlay.open { display:flex; }
   #kbd-overlay .kbd-panel { background:var(--panel); border:1px solid var(--border);
                  border-radius:10px; padding:20px 24px; min-width:320px;
-                 max-width:90vw; box-shadow:0 8px 30px rgba(31,35,40,.25); }
+                 max-width:90vw; box-shadow:0 8px 30px color-mix(in srgb, var(--text) 25%, transparent); }
   #kbd-overlay h2 { margin:0 0 14px; font-size:15px; }
   #kbd-overlay dl { display:grid; grid-template-columns:auto 1fr; gap:9px 18px;
                     margin:0; align-items:center; }
@@ -430,7 +432,29 @@
   .comment-badge { display:inline-flex; align-items:center; gap:4px; flex:none;
                    font-size:11px; font-weight:600; color:var(--accent);
                    font-family:'Cousine',ui-monospace,monospace; }
-  .comment-badge svg.fa-icon { width:13px; height:13px; }
+  .comment-badge svg.fa-icon { width:15px; height:15px; }
+  /* resolved comment threads collapse behind a bar */
+  .thread.resolved { background:var(--bg); }
+  .resolved-bar { display:none; align-items:center; gap:8px; padding:8px 14px;
+                  cursor:pointer; color:var(--muted); font-size:12px; }
+  .resolved-bar svg.fa-icon { width:14px; height:14px; color:var(--done); }
+  .thread.resolved > .resolved-bar { display:flex; }
+  .thread.resolved > .thread-inner { display:none; }
+  .thread.resolved.open > .thread-inner { display:block; }
+  .thread.resolved.open > .resolved-bar { border-bottom:1px solid var(--border); }
+  /* resolve / unresolve control: its own row below the reply field */
+  .thread-reply { flex-direction:column; align-items:stretch; gap:8px; }
+  .thread-reply-main { display:flex; min-width:0; }
+  .resolve-btn { align-self:flex-start; margin:4px 0 0 33px;  /* left: 24px avatar + 9px gap → lines up with Reply… */
+                 flex:none; display:inline-flex;
+                 align-items:center; gap:6px;
+                 padding:6px 12px; border:1px solid var(--border); border-radius:6px;
+                 background:var(--panel); cursor:pointer; font:inherit; font-size:12px;
+                 font-weight:600; color:var(--text); white-space:nowrap; }
+  .resolve-btn:hover { border-color:var(--accent); color:var(--accent); }
+  .resolve-btn svg.fa-icon { width:14px; height:14px; }
+  .resolve-btn:not(.resolved) svg.fa-icon { color:var(--done); }
+  .resolve-btn:disabled { opacity:.6; cursor:default; }
 </style>
 </head>
 <body>
@@ -647,14 +671,14 @@ async function postNote(payload) {
 }
 
 // A note reuses the comment card layout (.comment) with a purple theme, a
-// pencil gutter instead of an avatar, and a "saved locally" foot — so it can
-// never be mistaken for something posted to the PR.
+// pencil gutter instead of an avatar, a "you + Claude" pill, and a local-only
+// foot — so it reads as a channel to Claude, never a PR post.
 function noteCard(n) {
   const d = el('div', 'comment note');
   const main = el('div', 'comment-main');
   const head = el('div', 'comment-head');
   head.append(el('strong', 'comment-author note-label', 'Private note'));
-  head.append(el('span', 'note-pill', 'only you'));
+  head.append(el('span', 'note-pill', 'you + Claude'));
   const tools = el('div', 'comment-tools');
   const edit = el('button', 'comment-tool');
   edit.type = 'button'; edit.innerHTML = FA_PEN; edit.title = 'Edit';
@@ -666,7 +690,7 @@ function noteCard(n) {
   head.append(tools);
   const body = el('div', 'comment-body');
   body.textContent = n.body; body.style.whiteSpace = 'pre-wrap';
-  main.append(head, body, el('div', 'note-meta', 'saved locally'));
+  main.append(head, body, el('div', 'note-meta', 'saved locally · Claude can act on it'));
   const gutter = el('div', 'note-gutter'); gutter.innerHTML = FA_PEN;
   d.append(gutter, main);
   return d;
@@ -747,13 +771,15 @@ function injectNotes(body, file, h) {
 // ---- Comment-count badges on collapsed headers ---------------------------
 // A collapsed hunk/file/section hides any comments inside it; these counts
 // surface that on the header (root + replies, per thread).
+// counts exclude resolved threads — the badge means "unresolved discussion here"
 function commentsInHunk(file, h) {
   return (threadsByFile[file] || [])
-    .filter(t => commentInHunk(t.root, h))
+    .filter(t => !t.root.resolved && commentInHunk(t.root, h))
     .reduce((n, t) => n + 1 + (t.replies ? t.replies.length : 0), 0);
 }
 function commentsInFile(path) {
-  return ((DATA.comments || {}).inline || []).filter(c => c.path === path).length;
+  return ((DATA.comments || {}).inline || [])
+    .filter(c => c.path === path && !c.resolved).length;
 }
 function commentsInSection(sec) {
   let n = (sec.files || []).reduce((a, f) => a + commentsInFile(f), 0);
@@ -910,7 +936,7 @@ function addLineComposer(row, file, line, side) {
     box.classList.toggle('note-mode', t === 'note');
     submit.textContent = t === 'note' ? 'Add note' : 'Comment';
     ta.placeholder = t === 'note'
-      ? 'Leave a private note for yourself — only you can see this'
+      ? 'Note for yourself or Claude — never posted to GitHub'
       : 'Comment on this line…';
   };
   if (canComment) box.prepend(targetToggle(applyTarget));
@@ -1031,11 +1057,17 @@ function showReconnect() {
   box.innerHTML = FA_REFRESH + ' Reconnecting…';
   ov.append(box);
   document.body.append(ov);
+  let tries = 0;
   const probe = async () => {
     try {
       const r = await fetch('/api/state', { cache: 'no-store' });
       if (r.ok) { location.reload(); return; }
     } catch (e) { /* still down */ }
+    // Keep probing so it auto-recovers if the server returns, but stop
+    // pretending it's momentary: after ~15s it's stopped, not blinking —
+    // say what to do about it (the server no longer restarts itself on drift).
+    if (++tries === 7)
+      box.textContent = 'Server stopped — ask Claude to restart the deskcheck server.';
     setTimeout(probe, 2000);
   };
   setTimeout(probe, 1000);
@@ -1247,30 +1279,42 @@ function hunkBlock(file, h, standalone, noMark) {
 // Render a thread as its root comment card plus indented reply cards.
 function threadBlock(thread, rootNote) {
   const wrap = el('div', 'thread');
-  wrap.append(commentCard(thread.root, rootNote));
+  if (thread.root.resolved) wrap.classList.add('resolved');
+  // Always build the bar + inner; CSS shows the bar and hides the inner only
+  // when .resolved (and .open re-expands). This makes resolve a pure class
+  // toggle — no rebuild, no reload.
+  const inner = el('div', 'thread-inner');
+  inner.append(commentCard(thread.root, rootNote));
   const replies = el('div', 'thread-replies');   // left thread-line; hidden while empty
   thread.replies.forEach(r => {
     const card = commentCard(r);
     card.classList.add('reply');
     replies.append(card);
   });
-  wrap.append(replies);
-  if (canComment && thread.root.id) wrap.append(replyFoot(thread.root, replies));
+  inner.append(replies);
+  if (canComment && thread.root.id) inner.append(replyFoot(thread.root, replies, wrap));
+  const count = 1 + thread.replies.length;
+  const bar = el('div', 'resolved-bar');
+  bar.innerHTML = FA_CHECK;
+  bar.append(el('span', '', 'Resolved · ' + count + (count === 1 ? ' comment' : ' comments')));
+  bar.onclick = () => wrap.classList.toggle('open');
+  wrap.append(bar, inner);
   return wrap;
 }
 
 // The thread's reply affordance: a collapsed "Reply…" pill that expands into a
 // composer. A posted reply appends to the thread's reply column (root threads
 // are flat), then the field collapses back.
-function replyFoot(root, replies) {
+function replyFoot(root, replies, wrap) {
   const foot = el('div', 'thread-reply');
+  const main = el('div', 'thread-reply-main');   // grows; holds the pill or composer
   const collapsed = el('div', 'thread-reply-collapsed');
   const cm = DATA.comments || {};
   collapsed.append(avatarEl(cm.viewer || '', cm.viewer_avatar, true));
   collapsed.append(el('div', 'thread-reply-pill', 'Reply…'));
-  foot.append(collapsed);
+  main.append(collapsed);
   collapsed.onclick = () => {
-    if (foot.querySelector('.compose')) return;   // already expanded
+    if (main.querySelector('.compose')) return;   // already expanded
     collapsed.style.display = 'none';
     const box = composeBox({
       submitLabel: 'Reply',
@@ -1282,9 +1326,65 @@ function replyFoot(root, replies) {
         box.remove(); collapsed.style.display = '';
       },
     });
-    foot.append(box);
+    main.append(box);
   };
+  foot.append(main);
+  const rb = resolveBtn(root, wrap);   // own row below; only when we have the thread id
+  if (rb) foot.append(rb);
   return foot;
+}
+
+// Resolve / unresolve the whole thread via its GraphQL node id. Only shown when
+// fetch_comments stamped a thread_id (i.e. resolution data is available). The
+// toggle is in place and optimistic — no page reload.
+function resolveBtn(root, wrap) {
+  if (!root.thread_id) return null;
+  const b = el('button', 'resolve-btn');
+  b.type = 'button';
+  const render = () => {
+    b.classList.toggle('resolved', !!root.resolved);
+    b.innerHTML = root.resolved ? FA_REFRESH : FA_CHECK;
+    b.append(el('span', '', root.resolved ? 'Unresolve' : 'Resolve conversation'));
+  };
+  const apply = state => {          // flip data + the thread's collapse, in place
+    root.resolved = state;
+    wrap.classList.toggle('resolved', state);
+    if (state) wrap.classList.remove('open');   // resolving tucks it into the bar
+    render();
+  };
+  render();
+  b.onclick = async () => {
+    const target = !root.resolved;
+    apply(target);                  // optimistic — instant, no reload
+    b.disabled = true;
+    try {
+      const res = await api('/api/resolve-thread', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ thread_id: root.thread_id, resolved: target }),
+      });
+      if (!res.ok) {
+        let detail = 'HTTP ' + res.status;
+        try { const ej = await res.json(); if (ej && ej.detail) detail = ej.detail; }
+        catch (_) { if (res.status === 404) detail += ' — rerun the skill to restart the server'; }
+        throw new Error(detail);
+      }
+      const j = await res.json();
+      if (!j.ok) throw new Error(j.detail || 'failed');
+      b.disabled = false;
+      // keep comments.json in sync for future reloads, and move our poll baseline
+      // forward so this self-made change doesn't trigger a "New comments" pill
+      api('/api/refresh-comments', { method: 'POST' }).then(async () => {
+        try { const r = await (await api('/api/comments-rev')).json();
+              if (r.rev) DATA.comments_rev = r.rev; } catch (_) {}
+      }).catch(() => {});
+    } catch (e) {
+      apply(!target);               // revert the optimistic toggle
+      b.disabled = false;
+      const foot = b.closest('.thread-reply');
+      if (foot) foot.append(el('span', 'compose-error', String(e.message || e)));
+    }
+  };
+  return b;
 }
 
 // Splice each thread under its root's line (roots carry the anchor; replies
