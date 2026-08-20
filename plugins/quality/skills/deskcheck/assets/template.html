@@ -79,8 +79,19 @@
   .diff .comment-row td { padding:0; }
   /* comment payload lives in the code column: let it wrap (overrides code's
      white-space:pre) and give it a little breathing room from the gutter */
-  .diff .comment-row td.comment-cell { white-space:normal; padding:6px 12px 8px 0; }
+  .diff .comment-row td.comment-cell { white-space:normal; padding:6px 0 8px 0; }
   .diff .comment-row td.ln { cursor:default; }
+  /* Keep the comment/composer to the VISIBLE width, not the full width of a wide
+     horizontally-scrolling diff. --scrollport-w is the hunk-body's own visible
+     inline size (measured per hunk in markCommentable) rather than the scrolled-
+     out table width; sticky left:0 keeps it in view when the diff is scrolled
+     sideways. --code-indent shifts the payload right to line up with the code's
+     first character; that plus a small right gap is subtracted from the width so
+     it doesn't butt up against the file border. */
+  .diff .comment-row td.comment-cell > * {
+    position:sticky; left:0; box-sizing:border-box;
+    margin-left:var(--code-indent, 0px);
+    width:calc(var(--scrollport-w, 100%) - var(--code-indent, 0px) - 10px); }
   .nav-item { display:block; padding:8px 10px; border-radius:6px; cursor:pointer;
               margin-bottom:4px; }
   .nav-item:hover { background:var(--bg); }
@@ -168,8 +179,11 @@
   .sec .summary { margin:0 0 12px; color:var(--muted); }
   /* ---- section module map (mermaid) ---- */
   .section-diagram { margin:0 0 14px; border:1px solid var(--border); border-radius:6px;
-                     background:var(--panel); padding:8px 10px; overflow-x:auto; }
-  .section-diagram svg { max-width:100%; height:auto; }
+                     background:var(--panel); padding:8px 10px;
+                     overflow:auto; max-height:65vh; }
+  /* rendered at natural size in JS (see renderDiagram) so a many-file graph
+     stays legible and the container scrolls, rather than shrinking to fit */
+  .section-diagram svg { display:block; }
   .section-diagram .node.clickable { cursor:pointer; }
   .section-diagram .node.clickable:hover rect,
   .section-diagram .node.clickable:hover polygon { filter:brightness(.96); }
@@ -205,7 +219,11 @@
   .hunk-head .hunk-header { color:var(--muted); flex:1; min-width:0;
                             overflow-wrap:anywhere; }
   .hunk-head .file-path { flex:none; }
-  .hunk-body { overflow-x:auto; }
+  /* overflow-y:hidden: the "+" hover affordance is taller than a diff row, so on
+     the first/last row it overhangs the body edge — without this that 2px of
+     overhang makes the body vertically scrollable. Horizontal scroll (wide
+     diffs) is unaffected. */
+  .hunk-body { overflow-x:auto; overflow-y:hidden; }
   .binary-note, .empty { padding:8px 12px; color:var(--muted); font-size:12px; }
   .stale { flex:none; font-size:11px; color:#9a6700; background:#fff8c5;
            border:1px solid rgba(212,167,44,.4); border-radius:999px; padding:1px 8px;
@@ -304,16 +322,23 @@
   .thread-reply .compose { flex:1 1 auto; padding:0; background:none; }
 
   /* ---- compose / reply ---- */
-  body.can-comment .diff td.ln { cursor:pointer; }
-  /* hover "+" affordance is a top-layer popover, positioned in JS */
-  /* NB: don't set display here — a closed popover relies on the UA display:none,
-     and overriding it leaves a stuck "ghost" button. Set display only when open. */
-  .ln-add { position:fixed; margin:0; inset:auto; transform:translate(-50%,-50%);
-            width:28px; height:28px; padding:0; border:none; border-radius:7px;
-            cursor:pointer; background:var(--accent); color:#fff; line-height:1;
-            box-shadow:0 1px 4px color-mix(in srgb, var(--text) 40%, transparent); }
-  .ln-add:popover-open { display:flex; align-items:center; justify-content:center; }
-  .ln-add:hover { background:#0a5cc7; }
+  /* The "+" annotate hint lives INSIDE the line-number cell (::after), revealed
+     on row hover. As a child of the cell it collapses with the hunk and can
+     never strand — no popover, no JS positioning. The cell's own click handler
+     opens the composer; the hint is pointer-events:none so clicks fall through.
+     Shown on any annotatable line (a private note needs no PR). */
+  .diff td.ln.commentable { position:relative; cursor:pointer; }
+  .diff td.ln.commentable::after {
+    content:"+"; position:absolute; top:50%; right:2px; transform:translateY(-50%);
+    width:24px; height:24px; border-radius:6px; background:var(--accent); color:#fff;
+    text-align:center; line-height:24px; font-weight:700; font-size:19px;
+    pointer-events:none; opacity:0; transition:opacity .08s; }
+  /* Reveal + lift the "+" on hover of the CELL itself, not the whole row — the
+     row-level rule had knock-on effects elsewhere. The "+" overhangs the short
+     diff row, so z-index:1 lifts the hovered cell above its z-index:auto
+     neighbours while staying below the sticky file-header (z-index:2). */
+  .diff td.ln.commentable:hover { z-index:1; }
+  .diff td.ln.commentable:hover::after { opacity:1; background:#0a5cc7; }
 
   /* ---- expandable context between hunks ---- */
   .context-lines table.diff { width:100%; }
@@ -330,7 +355,6 @@
   .context-bar:hover { color:var(--accent); }
   .context-icon { display:inline-flex; }
   .context-icon svg.fa-icon { width:15px; height:15px; vertical-align:0; }
-  .ln-add svg.fa-icon { width:20px; height:20px; vertical-align:0; }
   .compose { padding:8px 12px; background:var(--panel); }
   /* the top-level "new comment" composer gets the same rounded card border as a
      thread (the reply-foot composer is inside a thread, so it stays borderless) */
@@ -404,7 +428,6 @@
   #kbd-overlay .kbd-hint { margin-top:16px; font-size:12px; color:var(--muted); }
 
   /* local notes — private to the reviewer, never sent to GitHub */
-  .can-annotate .diff td.ln { cursor:pointer; }
   /* notes carry their own card outline — inline they sit in a diff-table cell,
      which the .sec-body/.file-body > .comment border rule never reaches */
   .comment.note { background:#faf5ff; border:1px solid #8250df; border-left-width:3px;
@@ -506,7 +529,6 @@ const ICON_NO_TEST_D = 'M208 64c-17.7 0-32 14.3-32 32s14.3 32 32 32l0 336c0 61.9
 const FA_DIFF = '<svg class="fa-icon fa-diff" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Pro v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) Copyright 2026 Fonticons, Inc.--><path d="M160 96C124.7 96 96 124.7 96 160L96 480C96 513.1 121.2 540.4 153.5 543.7L160 544L480 544L486.5 543.7C516.6 540.6 540.6 516.7 543.6 486.6L543.9 480.1L543.9 160.1C543.9 124.8 515.2 96.1 479.9 96.1L160 96zM480 480L352 480L352 448L288 448L288 480L160 480L160 160L288 160L288 192L352 192L352 160L480 160L480 480zM329 239C319.6 229.6 304.4 229.6 295.1 239L231.1 303L229.4 304.8C221.7 314.2 222.3 328.1 231.1 336.9L295.1 400.9C304.5 410.3 319.7 410.3 329 400.9C338.3 391.5 338.4 376.3 329 367L306 344L392.1 344C405.4 344 416.1 333.3 416.1 320C416.1 306.7 405.4 296 392.1 296L306 296L329 273C338.4 263.6 338.4 248.4 329 239.1z"/></svg>';
 const FA_UP_RIGHT = '<svg class="fa-icon fa-up-right" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Pro v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) Copyright 2026 Fonticons, Inc.--><path d="M512 160C512 142.3 497.7 128 480 128L256 128C238.3 128 224 142.3 224 160C224 177.7 238.3 192 256 192L402.7 192L137.4 457.4C124.9 469.9 124.9 490.2 137.4 502.7C149.9 515.2 170.2 515.2 182.7 502.7L448 237.3L448 384C448 401.7 462.3 416 480 416C497.7 416 512 401.7 512 384L512 160z"/></svg>';
 const FA_COPY = '<svg class="fa-icon fa-copy" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M288 64C252.7 64 224 92.7 224 128L224 384C224 419.3 252.7 448 288 448L480 448C515.3 448 544 419.3 544 384L544 183.4C544 166 536.9 149.3 524.3 137.2L466.6 81.8C454.7 70.4 438.8 64 422.3 64L288 64zM160 192C124.7 192 96 220.7 96 256L96 512C96 547.3 124.7 576 160 576L352 576C387.3 576 416 547.3 416 512L416 496L352 496L352 512L160 512L160 256L176 256L176 192L160 192z"/></svg>';
-const FA_COMMENT_PLUS = '<svg class="fa-icon fa-comment-plus" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Pro v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) Copyright 2026 Fonticons, Inc.--><path d="M320 544C461.4 544 576 436.5 576 304C576 171.5 461.4 64 320 64C178.6 64 64 171.5 64 304C64 358.3 83.2 408.3 115.6 448.5L66.8 540.8C62 549.8 63.5 560.8 70.4 568.3C77.3 575.8 88.2 578.1 97.5 574.1L215.9 523.4C247.7 536.6 282.9 544 320 544zM320 208C333.3 208 344 218.7 344 232L344 280L392 280C405.3 280 416 290.7 416 304C416 317.3 405.3 328 392 328L344 328L344 376C344 389.3 333.3 400 320 400C306.7 400 296 389.3 296 376L296 328L248 328C234.7 328 224 317.3 224 304C224 290.7 234.7 280 248 280L296 280L296 232C296 218.7 306.7 208 320 208z"/></svg>';
 const FA_EXPAND = '<svg class="fa-icon fa-expand-updown" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Pro v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) Copyright 2026 Fonticons, Inc.--><path d="M297.4 41.4C309.9 28.9 330.2 28.9 342.7 41.4L406.7 105.4C415.9 114.6 418.6 128.3 413.6 140.3C408.6 152.3 396.9 160 384 160L352 160L352 208C352 225.7 337.7 240 320 240C302.3 240 288 225.7 288 208L288 160L256 160C243.1 160 231.4 152.2 226.4 140.2C221.4 128.2 224.2 114.5 233.3 105.3L297.3 41.3zM288 480L288 432C288 414.3 302.3 400 320 400C337.7 400 352 414.3 352 432L352 480L384 480C396.9 480 408.6 487.8 413.6 499.8C418.6 511.8 415.8 525.5 406.7 534.7L342.7 598.7C330.2 611.2 309.9 611.2 297.4 598.7L233.4 534.7C224.2 525.5 221.5 511.8 226.5 499.8C231.5 487.8 243.1 480 256 480L288 480zM192 320C192 337.7 177.7 352 160 352C142.3 352 128 337.7 128 320C128 302.3 142.3 288 160 288C177.7 288 192 302.3 192 320zM266.7 352C249 352 234.7 337.7 234.7 320C234.7 302.3 249 288 266.7 288C284.4 288 298.7 302.3 298.7 320C298.7 337.7 284.4 352 266.7 352zM405.4 320C405.4 337.7 391.1 352 373.4 352C355.7 352 341.4 337.7 341.4 320C341.4 302.3 355.7 288 373.4 288C391.1 288 405.4 302.3 405.4 320zM480 352C462.3 352 448 337.7 448 320C448 302.3 462.3 288 480 288C497.7 288 512 302.3 512 320C512 337.7 497.7 352 480 352z"/></svg>';
 const FA_PEN = '<svg class="fa-icon fa-pen" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M416.9 85.2L372 130.1L509.9 268L554.8 223.1C568.4 209.6 576 191.2 576 172C576 152.8 568.4 134.4 554.8 120.9L519.1 85.2C505.6 71.6 487.2 64 468 64C448.8 64 430.4 71.6 416.9 85.2zM338.1 164L122.9 379.1C112.2 389.8 104.4 403.2 100.3 417.8L64.9 545.6C62.6 553.9 64.9 562.9 71.1 569C77.3 575.1 86.2 577.5 94.5 575.2L222.3 539.7C236.9 535.6 250.2 527.9 261 517.1L476 301.9L338.1 164z"/></svg>';
 const FA_TRASH = '<svg class="fa-icon fa-trash" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M232.7 69.9L224 96L128 96C110.3 96 96 110.3 96 128C96 145.7 110.3 160 128 160L512 160C529.7 160 544 145.7 544 128C544 110.3 529.7 96 512 96L416 96L407.3 69.9C402.9 56.8 390.7 48 376.9 48L263.1 48C249.3 48 237.1 56.8 232.7 69.9zM512 208L128 208L149.1 531.1C150.7 556.4 171.7 576 197 576L443 576C468.3 576 489.3 556.4 490.9 531.1L512 208z"/></svg>';
@@ -561,8 +583,12 @@ function commentRow(node, anchorRow) {
   // so the comment reads as belonging to that line
   if (anchorRow && anchorRow.classList.contains('add')) tr.classList.add('add');
   else if (anchorRow && anchorRow.classList.contains('del')) tr.classList.add('del');
-  tr.append(el('td', 'ln'), el('td', 'ln'), el('td', 'sign'));
+  // One full-width cell (no separate gutter columns): the shared table columns
+  // would otherwise indent the comment by the ln-gutter width, and a scrollport-
+  // wide sticky payload would then overflow. colSpan spans the whole row so the
+  // payload starts at the scrollport's left edge. The row's add/del tint stays.
   const td = el('td', 'code comment-cell');
+  td.colSpan = 4;
   td.append(node);
   tr.append(td);
   return tr;
@@ -983,68 +1009,44 @@ function lineTargetFromCell(cell) {
   return { row, file: body.dataset.hunkFile, line: +num, side };
 }
 
-// A top-layer Popover API button that follows the pointer. `resolve(el)` maps
-// the element under the pointer to { rect, data } (or null): over that target →
-// show the button centered on rect and remember data; over the button → stay;
-// anywhere else → hide. The pointer's real position is the single source of
-// truth, which is what makes hide-on-leave robust — and a closed popover MUST
-// be truly display:none (see the :popover-open CSS) or it strands a ghost.
-function hoverPopover({ cls, html, title, resolve, onClick }) {
-  const btn = el('button', cls);
-  btn.type = 'button';
-  btn.innerHTML = html;
-  if (title) btn.title = title;
-  btn.setAttribute('popover', 'manual');
-  document.body.append(btn);
-  let data = null;
-  const hide = () => {
-    data = null;
-    if (btn.matches(':popover-open')) { try { btn.hidePopover(); } catch (e) {} }
-  };
-  const showAt = (rect, d) => {
-    data = d;
-    btn.style.left = (rect.left + rect.width / 2) + 'px';
-    btn.style.top = (rect.top + rect.height / 2) + 'px';
-    if (!btn.matches(':popover-open')) { try { btn.showPopover(); } catch (e) {} }
-  };
-  const evaluate = (x, y) => {
-    const at = document.elementFromPoint(x, y);
-    if (!at) { hide(); return; }
-    if (at === btn || btn.contains(at)) return;
-    const hit = at.closest ? resolve(at) : null;
-    if (hit) showAt(hit.rect, hit.data); else hide();
-  };
-  document.addEventListener('pointermove', e => evaluate(e.clientX, e.clientY));
-  // no pointermove fires once the pointer leaves the window — catch those
-  document.documentElement.addEventListener('pointerleave', hide);
-  document.addEventListener('mouseout', e => { if (!e.relatedTarget) hide(); });
-  btn.addEventListener('click', () => {
-    if (data == null) return;
-    const d = data;
-    hide();
-    onClick(d);
-  });
-  // a scroll would leave the fixed button stranded over the wrong row
-  window.addEventListener('scroll', hide, true);
-}
-
 // The line gutter is always live: a note needs no PR. When a PR exists the
-// composer offers comment-or-note; otherwise it's note-only.
-{
-  document.addEventListener('click', e => {
-    const t = e.target.closest && lineTargetFromCell(e.target.closest('td.ln'));
-    if (t) addLineComposer(t.row, t.file, t.line, t.side);
+// composer offers comment-or-note; otherwise it's note-only. Clicking a
+// commentable line-number cell opens the composer — the "+" hint is pure CSS
+// (td.ln.commentable::after, revealed on row hover), so it lives inside the cell
+// and can never strand when a hunk collapses.
+document.addEventListener('click', e => {
+  const t = e.target.closest && lineTargetFromCell(e.target.closest('td.ln'));
+  if (t) addLineComposer(t.row, t.file, t.line, t.side);
+});
+
+// Tag the line cells an annotation can anchor to, so CSS shows the in-cell "+".
+// Reuses lineTargetFromCell's new-side / pure-deletion eligibility, so context
+// lines that can't take a comment stay bare. Called on each hunk as it hydrates.
+function markCommentable(body) {
+  body.querySelectorAll('td.ln').forEach(c => {
+    if (lineTargetFromCell(c)) c.classList.add('commentable');
   });
-  hoverPopover({
-    cls: 'ln-add', html: FA_COMMENT_PLUS,
-    title: canComment ? 'Comment or note on this line' : 'Add a private note on this line',
-    resolve: at => {
-      const cell = at.closest('.hunk-body td.ln');
-      const t = cell && lineTargetFromCell(cell);
-      return t ? { rect: cell.getBoundingClientRect(), data: t } : null;
-    },
-    onClick: t => addLineComposer(t.row, t.file, t.line, t.side),
-  });
+  // Measure where the code's first character sits (past the ln/sign gutter,
+  // whose width varies with the line-number digits) so comment payloads line up
+  // with the code, not the file's left edge — feeds the .comment-cell rule.
+  // ResizeObserver, not a one-shot: a file's hunks all hydrate together, so a
+  // still-collapsed hunk here has a zero-size body; the observer re-measures the
+  // moment it's expanded (and on window/font resize), when layout is real.
+  const measure = () => {
+    const codeCell = body.querySelector('td.code:not(.comment-cell)');
+    const bodyRect = body.getBoundingClientRect();
+    if (!codeCell || !bodyRect.width) return;   // collapsed / not laid out yet
+    const cellRect = codeCell.getBoundingClientRect();
+    const pad = parseFloat(getComputedStyle(codeCell).paddingLeft) || 0;
+    const indent = Math.max(0, Math.round(cellRect.left - bodyRect.left + body.scrollLeft + pad));
+    body.style.setProperty('--code-indent', indent + 'px');
+    // the visible scrollport width (excludes any scrollbar) — caps comment width
+    // without a CSS container (container-type nudged the body's height, adding a
+    // stray vertical scrollbar)
+    body.style.setProperty('--scrollport-w', body.clientWidth + 'px');
+  };
+  measure();
+  new ResizeObserver(measure).observe(body);
 }
 
 let reconnecting = false;
@@ -1215,6 +1217,7 @@ function ensureFile(path) {
           if (h) {
             b.innerHTML = h.html;
             b.style.minHeight = '';
+            markCommentable(b);
             injectComments(b, path, h);
             injectNotes(b, path, h);
           }
@@ -1699,6 +1702,18 @@ async function renderDiagram(container, def, nodes, untested) {
     const id = 'mmd-' + secId.replace(/[^a-zA-Z0-9_-]/g, '_');
     const { svg } = await mermaid.render(id, def);
     container.innerHTML = svg;
+    // Render at the diagram's natural size so labels stay legible; the container
+    // scrolls (overflow:auto) when a many-file section makes the graph wider or
+    // taller than the panel. Mermaid emits width="100%" + max-width:<natural>px,
+    // which otherwise *shrinks* the whole graph — text and all — to fit, going
+    // unreadable past ~10 nodes. Pin the intrinsic px from the viewBox to opt out.
+    const svgEl = container.querySelector('svg');
+    const vb = svgEl && svgEl.viewBox.baseVal;
+    if (vb && vb.width) {
+      svgEl.style.maxWidth = 'none';
+      svgEl.style.width = Math.ceil(vb.width) + 'px';
+      svgEl.style.height = Math.ceil(vb.height) + 'px';
+    }
     const untestedSet = new Set(untested);
     // Per node, off the element id (…-flowchart-<nodeId>-<n>) — stable across
     // Mermaid 10/11, unlike the version-fragile `click … call` binding.
@@ -1889,8 +1904,6 @@ function build() {
   document.title = DATA.title || 'PR Review';
   $('#title').textContent = DATA.title || 'PR Review';
   $('#sub').textContent = (DATA.branch || 'HEAD') + ' → ' + DATA.target;
-  document.body.classList.toggle('can-comment', canComment);
-  document.body.classList.add('can-annotate');  // notes need no PR
   if (DATA.comments && DATA.comments.url) {
     // PR link lives at the far right of the top bar (most critical)
     const a = el('a', 'pr-link');
@@ -1992,12 +2005,26 @@ function step(list, dir, cur) {
   if (!list.length) return;
   const open = n => !n.classList.contains('reviewed');
   const i = cur ? list.indexOf(cur) : -1;
-  if (i < 0) {
-    const first = nearestToTop(list.filter(open));
-    return first && setKbdFocus(first);
+  if (i >= 0) {                       // cur is still on-screen: walk from its slot
+    for (let j = i + dir; j >= 0 && j < list.length; j += dir)
+      if (open(list[j])) return setKbdFocus(list[j]);
+    return;
   }
-  for (let j = i + dir; j >= 0 && j < list.length; j += dir)
-    if (open(list[j])) return setKbdFocus(list[j]);
+  // cur left the visible list — it was just marked and collapsed out of view (a
+  // single-hunk file collapses the whole file). Advance from cur's DOM position
+  // in reading order, NOT to the geometrically nearest open hunk: after the
+  // collapse the nearest one can be deeper in the next section, so 'm' would skip
+  // past that section's first hunk. compareDocumentPosition still works because a
+  // collapsed node stays in the DOM.
+  if (cur) {
+    const want = dir > 0 ? Node.DOCUMENT_POSITION_FOLLOWING
+                         : Node.DOCUMENT_POSITION_PRECEDING;
+    const ordered = dir > 0 ? list : [...list].reverse();
+    const next = ordered.find(n => open(n) && (cur.compareDocumentPosition(n) & want));
+    return next && setKbdFocus(next);
+  }
+  const first = nearestToTop(list.filter(open));   // first-ever press: no anchor
+  return first && setKbdFocus(first);
 }
 
 // first unreviewed visible <sel> inside a container — used to dive from a
