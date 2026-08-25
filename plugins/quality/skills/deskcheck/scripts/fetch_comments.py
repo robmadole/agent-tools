@@ -89,6 +89,33 @@ def threads_index(repo, slug, n):
     return out
 
 
+# GitHub's own @-autocomplete pulls from a repo's "mentionable users" (repo
+# collaborators + everyone who has participated). This is that same list.
+_MENTIONABLES_Q = '''query($owner:String!,$name:String!){
+  repository(owner:$owner,name:$name){
+    mentionableUsers(first:100){ nodes{ login name avatarUrl } } } }'''
+
+
+def mentionable_users(repo, slug):
+    """Repo's mentionable users — the source for the composer's @-autocomplete.
+
+    Best-effort: any GraphQL failure yields [], and main() still falls back to
+    the people already seen on the PR."""
+    owner, _, name = slug.partition('/')
+    r = subprocess.run(
+        ['gh', 'api', 'graphql', '-f', 'query=' + _MENTIONABLES_Q,
+         '-F', 'owner=' + owner, '-F', 'name=' + name],
+        cwd=repo, capture_output=True, text=True)
+    if r.returncode != 0:
+        return []
+    try:
+        nodes = json.loads(r.stdout)['data']['repository']['mentionableUsers']['nodes']
+    except (KeyError, TypeError, json.JSONDecodeError):
+        return []
+    return [{'login': u['login'], 'name': u.get('name') or '',
+             'avatar_url': u.get('avatarUrl') or ''} for u in nodes]
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--workspace', required=True)
@@ -112,6 +139,18 @@ def main():
                         cwd=a.repo, capture_output=True, text=True)
     vu = json.loads(vr.stdout) if vr.returncode == 0 else {}
     viewer = vu.get('login', '')
+
+    # @-autocomplete source: the repo's mentionable users, unioned with everyone
+    # already on this PR (authors beyond the first 100 mentionables, the viewer)
+    # so the menu is never empty even if the GraphQL call is unavailable.
+    mentionables = {m['login']: m for m in mentionable_users(a.repo, slug)}
+    for c in inline + conv:
+        u = c['user']
+        mentionables.setdefault(u['login'], {
+            'login': u['login'], 'name': '', 'avatar_url': u.get('avatar_url') or ''})
+    if viewer:
+        mentionables.setdefault(viewer, {
+            'login': viewer, 'name': '', 'avatar_url': vu.get('avatar_url', '')})
 
     data = {
         'pr': n,
@@ -138,6 +177,8 @@ def main():
             'body': c.get('body') or '', 'url': c['html_url'],
             'body_html': render_md(a.repo, slug, c.get('body') or ''),
         } for c in inline],
+        'mentionables': sorted(mentionables.values(),
+                               key=lambda m: m['login'].lower()),
     }
     ws = Path(a.workspace).expanduser()
     (ws / 'comments.json').write_text(

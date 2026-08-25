@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from render_diff import (_diff_entries, _git, _lexer_for, context_rows,
                          file_hunks, hunk_html, merge_base, multi_file_hunks,
                          new_side)
-from fetch_comments import render_md  # GFM → HTML via GitHub's /markdown endpoint
+from fetch_comments import render_md, threads_index  # GFM→HTML; thread resolution lookup
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
 ASSET_TYPES = {
@@ -392,9 +392,18 @@ def post_comment(args, req):
     if r.returncode != 0:
         return 500, {'ok': False, 'detail': r.stderr.strip() or r.stdout.strip()}
     c = json.loads(r.stdout)
+    # thread_id + resolved aren't in the REST create response (GraphQL-only), so
+    # without this the optimistic card renders with no Resolve button until a
+    # reload. Look them up now. Best-effort: a miss (GraphQL lag/perms) falls
+    # back to prior behavior — button appears on the next refresh.
+    # ponytail: reuses threads_index (pages all threads); a targeted query would
+    # be lighter if this POST's latency ever matters.
+    tinfo = threads_index(args.repo, slug_str, pr['number']).get(c['id'], {})
     threading.Thread(target=refresh_comments, args=(args,), daemon=True).start()
     return 200, {'ok': True, 'comment': {
         'id': c['id'], 'in_reply_to_id': c.get('in_reply_to_id'),
+        'thread_id': tinfo.get('thread_id'),
+        'resolved': tinfo.get('resolved', False),
         'path': c.get('path'),
         'line': c.get('line') or c.get('original_line'),
         'side': c.get('side') or 'RIGHT', 'author': c['user']['login'],
