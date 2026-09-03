@@ -179,8 +179,12 @@
   .sec .summary { margin:0 0 12px; color:var(--muted); }
   /* ---- section module map (mermaid) ---- */
   .section-diagram { margin:0 0 14px; border:1px solid var(--border); border-radius:6px;
-                     background:var(--panel); padding:8px 10px;
-                     overflow:auto; max-height:65vh; }
+                     background:var(--panel); }
+  .section-diagram > summary { cursor:pointer; padding:6px 10px; color:var(--muted);
+                               font-size:12px; user-select:none; }
+  .section-diagram > summary:hover { color:var(--fg); }
+  .section-diagram > summary span { margin-left:5px; }
+  .diagram-body { overflow:auto; max-height:65vh; padding:8px 10px; }
   /* rendered at natural size in JS (see renderDiagram) so a many-file graph
      stays legible and the container scrolls, rather than shrinking to fit */
   .section-diagram svg { display:block; }
@@ -795,8 +799,9 @@ function deleteNote(card, n, btn) {
 
 // Splice notes into a hunk body, anchored to their line — mirrors
 // injectComments (notes carry the same {line, side}, so commentInHunk fits).
-function injectNotes(body, file, h) {
-  const ns = (notesByFile[file] || []).filter(n => commentInHunk(n, h));
+function injectNotes(body, file, h, rightOnly) {
+  const ns = (notesByFile[file] || [])
+    .filter(n => commentInHunk(n, h) && !(rightOnly && n.side === 'LEFT'));
   if (!ns.length) return;
   const rows = [...body.querySelectorAll('table.diff tr')];
   ns.forEach(n => {
@@ -1110,8 +1115,9 @@ function targetToggle(onChange) {
 }
 
 // Resolve a numbered line-number cell to its composer target, or null.
-// Left cell → old side (LEFT), right cell → new side (RIGHT). Delta-view hunk
-// bodies have no hunkFile, so they never yield a target.
+// Left cell → old side (LEFT), right cell → new side (RIGHT). A delta-view body
+// is snapshot→current, so its right side is still current-file numbering (LEFT
+// isn't the base's, so it's refused below).
 function lineTargetFromCell(cell) {
   const body = cell && cell.closest('.hunk-body');
   if (!body || !body.dataset.hunkFile) return null;
@@ -1124,6 +1130,8 @@ function lineTargetFromCell(cell) {
   // deletion (no right-hand line number), so context/modified rows don't show
   // two identical buttons side by side.
   if (isLeft && /^\d+$/.test((lns[1] ? lns[1].textContent : '').trim())) return null;
+  // delta view old side = the reviewer's snapshot, not the base — not anchorable
+  if (isLeft && body.dataset.delta) return null;
   const side = isLeft ? 'LEFT' : 'RIGHT';
   return { row, file: body.dataset.hunkFile, line: +num, side };
 }
@@ -1516,8 +1524,9 @@ function resolveBtn(root, wrap) {
 
 // Splice each thread under its root's line (roots carry the anchor; replies
 // ride along inside the thread block).
-function injectComments(body, file, h) {
-  const ts = (threadsByFile[file] || []).filter(t => commentInHunk(t.root, h));
+function injectComments(body, file, h, rightOnly) {
+  const ts = (threadsByFile[file] || [])
+    .filter(t => commentInHunk(t.root, h) && !(rightOnly && t.root.side === 'LEFT'));
   if (!ts.length) return;
   const rows = [...body.querySelectorAll('table.diff tr')];
   ts.forEach(t => {
@@ -1720,7 +1729,13 @@ function fileBlock(path) {
           const hh = el('div', 'hunk-head');
           hh.append(el('code', 'hunk-header', h.header));
           const hbody = el('div', 'hunk-body');
+          hbody.dataset.hunkFile = path;
+          hbody.dataset.delta = '1';
           hbody.innerHTML = h.html;
+          markCommentable(hbody);
+          // right side only: the delta's old side is the snapshot, not the base
+          injectComments(hbody, path, h, true);
+          injectNotes(hbody, path, h, true);
           hb.append(hh, hbody);
           deltaBody.append(hb);
         });
@@ -1751,9 +1766,14 @@ function sectionBlock(sec) {
   if (sec.summary) body.append(el('p', 'summary', sec.summary));
 
   // Module map — filled in async by loadDiagrams() from /api/diagrams.
-  const diagram = el('div', 'section-diagram');
+  // collapsed by default — the map is orientation, not the review itself
+  const diagram = el('details', 'section-diagram');
   diagram.dataset.secId = sec.id;
-  diagram.append(el('div', 'diagram-loading', 'Generating module map…'));
+  const dbody = el('div', 'diagram-body');
+  dbody.append(el('div', 'diagram-loading', 'Generating module map…'));
+  const dsum = el('summary');
+  dsum.append(el('span', '', 'Module map'));
+  diagram.append(dsum, dbody);
   body.append(diagram);
 
   // The diagram above is the section's file index now (clickable, hunk counts),
@@ -1825,7 +1845,8 @@ async function renderDiagram(container, def, nodes, untested) {
     const secId = container.dataset.secId;
     const id = 'mmd-' + secId.replace(/[^a-zA-Z0-9_-]/g, '_');
     const { svg } = await mermaid.render(id, def);
-    container.innerHTML = svg;
+    const box = container.querySelector('.diagram-body');
+    box.innerHTML = svg;
     // Render at the diagram's natural size so labels stay legible; the container
     // scrolls (overflow:auto) when a many-file section makes the graph wider or
     // taller than the panel. Mermaid emits width="100%" + max-width:<natural>px,
