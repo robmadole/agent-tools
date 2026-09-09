@@ -35,5 +35,9 @@ The `furtherSetup` property is a path (relative to the repository root) to a fil
 Create the directory structure if it doesn't exist:
 
 ```bash
-mkdir -p {directory}/specs {directory}/results /tmp/browser-tests
+mkdir -p {directory}/specs {directory}/results {directory}/tmp
 ```
+
+`{directory}/tmp` holds runner scratch files (screenshots, upload fixtures). It
+must be gitignored — check with `git check-ignore -q {directory}/tmp` and append
+`{directory}/tmp/` to the project's `.gitignore` if that exits non-zero.

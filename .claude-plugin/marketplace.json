@@ -18,7 +18,7 @@
         "gherkin",
         "elixir"
       ],
-      "version": "1.0.28"
+      "version": "1.0.29"
     },
     {
       "name": "develop",
@@ -42,7 +42,7 @@
         "review",
         "pull-request"
       ],
-      "version": "1.0.10"
+      "version": "1.0.11"
     }
   ]
 }

@@ -60,13 +60,22 @@ def main():
     page = urllib.request.urlopen(f'http://127.0.0.1:{port}/').read().decode()
     assert 'Core change' in page and '__DATA__' not in page
     assert '<table class="diff">' not in page, 'page should not inline diff HTML'
+    assert '"diagrams": {}' in page, 'no diagram drawn -> no diagram block'
+
+    # a section diagram is just <workspace>/diagrams/<id>.svg, re-read per page
+    # load — so one drawn mid-review shows up on the next refresh, no restart
+    (ws / 'diagrams').mkdir()
+    (ws / 'diagrams' / 'core.svg').write_text(
+        '<svg viewBox="0 0 10 10"><title>DIAGRAM_MARKER</title></svg>')
+    (ws / 'diagrams' / 'broken.svg').write_bytes(b'\xff\xfe not utf-8')
+    page2 = urllib.request.urlopen(f'http://127.0.0.1:{port}/').read().decode()
+    assert 'DIAGRAM_MARKER' in page2, 'section diagram not inlined into the page'
+    assert 'UnicodeDecodeError' not in page2, 'one bad svg must not 500 the review'
 
     # static assets are served from assets/, not inlined into the page
     assert '@font-face' not in page, 'fonts should be served, not inlined'
     fonts = urllib.request.urlopen(f'http://127.0.0.1:{port}/assets/fonts.css').read()
     assert b'@font-face' in fonts, 'fonts.css not served'
-    merm = urllib.request.urlopen(f'http://127.0.0.1:{port}/assets/mermaid.min.js')
-    assert merm.status == 200, 'mermaid.min.js not served'
     for bad in ('/assets/../server.py', '/assets/nope.css', '/assets/x.py'):
         try:
             urllib.request.urlopen(f'http://127.0.0.1:{port}{bad}')

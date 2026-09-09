@@ -96,12 +96,16 @@ mkdir -p {directory}/results
 ```
 
 ```bash
-mkdir -p /tmp/browser-tests
+mkdir -p {directory}/tmp
 ```
 
 Where `{directory}` comes from `.browser-tests.json`.
 
-**Important**: The `/tmp/browser-tests/` directory is for temporary files created during test execution (screenshots for verification, dummy test fixtures for upload testing, etc.). Never save temporary files into the project directory — only `.md` report files and `.feature` spec files belong in `{directory}/`.
+**Important**: `{directory}/tmp/` is for temporary files created during test execution (screenshots for verification, dummy test fixtures for upload testing, etc.). Temporary files go nowhere else — only `.md` report files and `.feature` spec files belong in the rest of `{directory}/`.
+
+It sits inside the project on purpose. Playwright MCP servers refuse to write outside their allowed roots: an absolute `/tmp/...` path fails with "File access denied", and runners then work around it by writing into the repo root — exactly what this rule exists to prevent.
+
+It must be gitignored. Check with `git check-ignore -q {directory}/tmp`; if that exits non-zero, append `{directory}/tmp/` to the project's `.gitignore` and tell the operator you did.
 
 Then record the pre-run baseline of untracked files — you will diff against it during Cleanup to catch any temp files that leak into the repo:
 
@@ -202,6 +206,7 @@ There are 3 Playwright MCP server instances available: `playwright-1`, `playwrig
 4. For each subagent: read `references/runner-prompt.md` and substitute the template variables:
    - `{base URL}` — from configuration
    - `{file path}` — the feature file to execute
+   - `{directory}` — the `directory` from configuration, so the runner writes its scratch files to the gitignored `{directory}/tmp/`
    - `{playwright instance}` — the assigned instance name
    - `{further setup}` — the furtherSetup content (or empty if not set)
    - `{testdata context}` — if this file had `testdata:` directives, include the resolved data (IDs, credentials, etc.) as a "TEST DATA" block the runner can reference when interpreting steps. If no `testdata:` directives were present, substitute with empty string.

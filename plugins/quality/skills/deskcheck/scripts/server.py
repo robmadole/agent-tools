@@ -288,6 +288,16 @@ def build_page(args, con):
                            for e in entries]}
              for p, entries in all_entries.items()}
     cpath = Path(args.workspace) / 'comments.json'
+    # Section diagrams are just files on disk (Claude draws them with the
+    # diagram-design skill); read them per page load, so one drawn mid-review
+    # shows up on the reviewer's next refresh with no restart.
+    ddir = Path(args.workspace) / 'diagrams'
+    diagrams = {}
+    for f in sorted(ddir.glob('*.svg')) if ddir.is_dir() else []:
+        try:                       # one unreadable file must not 500 the review
+            diagrams[f.stem] = f.read_text()
+        except (OSError, UnicodeDecodeError):
+            pass
     data = {
         'title': sections.get('title', 'PR Review'),
         'branch': sections.get('branch', ''),
@@ -298,6 +308,7 @@ def build_page(args, con):
         'comments': json.loads(cpath.read_text()) if cpath.exists() else None,
         'comments_rev': cpath.stat().st_mtime if cpath.exists() else 0,
         'notes': read_notes(con),
+        'diagrams': diagrams,
     }
     return render_template(data).encode()
 
@@ -339,22 +350,6 @@ def refresh_comments(args):
         [sys.executable, str(SKILL_DIR / 'scripts' / 'fetch_comments.py'),
          '--workspace', args.workspace, '--repo', args.repo],
         capture_output=True, text=True)
-
-
-def generate_diagrams(args):
-    """(Re)build <workspace>/diagrams.json via the standalone diagram.py.
-
-    Fire-and-forget from a daemon thread on startup so the module maps never
-    block serving — the client polls /api/diagrams and renders when they land.
-    """
-    r = subprocess.run(
-        [sys.executable, str(SKILL_DIR / 'scripts' / 'diagram.py'),
-         '--workspace', args.workspace, '--repo', args.repo,
-         '--target', args.target],
-        capture_output=True, text=True)
-    if r.returncode != 0:
-        print('diagram generation failed: '
-              + (r.stderr or r.stdout).strip(), flush=True)
 
 
 def post_comment(args, req):
@@ -631,7 +626,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, body)
         elif url.path.startswith('/assets/'):
             # static files served from the skill's assets/ dir, so the page
-            # needn't inline them (mermaid's 3MB, the fonts' 50KB, …).
+            # needn't inline them (the fonts' 50KB, …).
             name = url.path[len('/assets/'):]
             ctype = ASSET_TYPES.get(Path(name).suffix)
             # basename-only + known extension: no traversal, no arbitrary reads
@@ -644,10 +639,6 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(404, b'not found')
                 return
             self._send(200, body, ctype)
-        elif url.path == '/api/diagrams':
-            dpath = Path(self.args.workspace) / 'diagrams.json'
-            body = dpath.read_bytes() if dpath.exists() else b'{"sections":{}}'
-            self._send(200, body, 'application/json')
         elif url.path == '/api/state':
             self._send(200, json.dumps(read_state(self.con)).encode(),
                        'application/json')
@@ -801,10 +792,6 @@ def main():
     Handler.con = open_db(args.workspace)
     Handler.base = merge_base(args.repo, args.target)
     migrate_legacy_keys(Handler.con, args.repo, args.target, Handler.base)
-
-    # Build the per-section module maps off the request path — the page serves
-    # immediately and the client polls /api/diagrams for them.
-    threading.Thread(target=generate_diagrams, args=(args,), daemon=True).start()
 
     if args.watch_drift:
         threading.Thread(target=drift_watch, args=(args, args.drift_interval),

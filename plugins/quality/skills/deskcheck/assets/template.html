@@ -177,7 +177,7 @@
   .sec.reviewed > .sec-head h2 { color:var(--done); }
   .sec-body { padding:12px 16px; }
   .sec .summary { margin:0 0 12px; color:var(--muted); }
-  /* ---- section module map (mermaid) ---- */
+  /* ---- section diagram (drawn by Claude with the diagram-design skill) ---- */
   .section-diagram { margin:0 0 14px; border:1px solid var(--border); border-radius:6px;
                      background:var(--panel); }
   .section-diagram > summary { cursor:pointer; padding:6px 10px; color:var(--muted);
@@ -185,13 +185,19 @@
   .section-diagram > summary:hover { color:var(--fg); }
   .section-diagram > summary span { margin-left:5px; }
   .diagram-body { overflow:auto; max-height:65vh; padding:8px 10px; }
-  /* rendered at natural size in JS (see renderDiagram) so a many-file graph
-     stays legible and the container scrolls, rather than shrinking to fit */
-  .section-diagram svg { display:block; }
-  .section-diagram .node.clickable { cursor:pointer; }
-  .section-diagram .node.clickable:hover rect,
-  .section-diagram .node.clickable:hover polygon { filter:brightness(.96); }
-  .diagram-loading { color:var(--muted); font-size:12px; padding:4px 2px; }
+  /* Scale DOWN to fit a narrow panel (orientation you have to scroll sideways
+     for isn't orientation), but never scale UP past the width the diagram was
+     drawn at — 960, doc-inline's viewBox per SKILL.md §3.5. Upscaling vector
+     art just yields oversized text and a diagram that eats a wide monitor.
+     Centred in whatever width is left over. The 600 floor only bites on a
+     cramped window (panel < 600), where scrolling beats 6px labels; at every
+     normal width the diagram just fits.
+     !important because the drawer may put its own width/max-width on the <svg>
+     root, and an inline style would otherwise beat this rule — the host page
+     owns the embedded diagram's layout, not the file it was handed. */
+  .section-diagram svg { display:block; margin:0 auto;
+                         width:100% !important; max-width:960px !important;
+                         min-width:600px !important; height:auto !important; }
   .collapsed > .sec-body, .collapsed > .file-body, .collapsed > .hunk-body { display:none; }
 
   .file { border:1px solid var(--border); border-radius:6px; margin-bottom:12px;
@@ -545,7 +551,6 @@
     <div class="kbd-hint">Esc or click outside to close</div>
   </div>
 </div>
-<script src="/assets/mermaid.min.js"></script>
 <script>
 const DATA = __DATA__;
 const state = DATA.state || {};
@@ -553,9 +558,6 @@ const FA_CHECK = '<svg class="fa-icon fa-check" xmlns="http://www.w3.org/2000/sv
 const FA_NEW_FILE = '<svg class="fa-icon fa-new-file" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M128 64C92.7 64 64 92.7 64 128L64 512C64 547.3 92.7 576 128 576L308 576C285.3 544.5 272 505.8 272 464C272 363.4 349.4 280.8 448 272.7L448 234.6C448 217.6 441.3 201.3 429.3 189.3L322.7 82.7C310.7 70.7 294.5 64 277.5 64L128 64zM389.5 240L296 240C282.7 240 272 229.3 272 216L272 122.5L389.5 240zM464 608C543.5 608 608 543.5 608 464C608 384.5 543.5 320 464 320C384.5 320 320 384.5 320 464C320 543.5 384.5 608 464 608zM480 400L480 448L528 448C536.8 448 544 455.2 544 464C544 472.8 536.8 480 528 480L480 480L480 528C480 536.8 472.8 544 464 544C455.2 544 448 536.8 448 528L448 480L400 480C391.2 480 384 472.8 384 464C384 455.2 391.2 448 400 448L448 448L448 400C448 391.2 455.2 384 464 384C472.8 384 480 391.2 480 400z"/></svg>';
 const FA_REFRESH = '<svg class="fa-icon fa-refresh" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M129.9 292.5C143.2 199.5 223.3 128 320 128C373 128 421 149.5 455.8 184.2C456 184.4 456.2 184.6 456.4 184.8L464 192L416.1 192C398.4 192 384.1 206.3 384.1 224C384.1 241.7 398.4 256 416.1 256L544.1 256C561.8 256 576.1 241.7 576.1 224L576.1 96C576.1 78.3 561.8 64 544.1 64C526.4 64 512.1 78.3 512.1 96L512.1 149.4L500.8 138.7C454.5 92.6 390.5 64 320 64C191 64 84.3 159.4 66.6 283.5C64.1 301 76.2 317.2 93.7 319.7C111.2 322.2 127.4 310 129.9 292.6zM573.4 356.5C575.9 339 563.7 322.8 546.3 320.3C528.9 317.8 512.6 330 510.1 347.4C496.8 440.4 416.7 511.9 320 511.9C267 511.9 219 490.4 184.2 455.7C184 455.5 183.8 455.3 183.6 455.1L176 447.9L223.9 447.9C241.6 447.9 255.9 433.6 255.9 415.9C255.9 398.2 241.6 383.9 223.9 383.9L96 384C87.5 384 79.3 387.4 73.3 393.5C67.3 399.6 63.9 407.7 64 416.3L65 543.3C65.1 561 79.6 575.2 97.3 575C115 574.8 129.2 560.4 129 542.7L128.6 491.2L139.3 501.3C185.6 547.4 249.5 576 320 576C449 576 555.7 480.6 573.4 356.5z"/></svg>';
 const FA_FOLDER_OPEN = '<svg class="fa-icon fa-folder-open" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M88 289.6L64.4 360.2L64.4 160C64.4 124.7 93.1 96 128.4 96L267.1 96C280.9 96 294.4 100.5 305.5 108.8L343.9 137.6C349.4 141.8 356.2 144 363.1 144L480.4 144C515.7 144 544.4 172.7 544.4 208L544.4 224L179 224C137.7 224 101 250.4 87.9 289.6zM509.8 512L131 512C98.2 512 75.1 479.9 85.5 448.8L133.5 304.8C140 285.2 158.4 272 179 272L557.8 272C590.6 272 613.7 304.1 603.3 335.2L555.3 479.2C548.8 498.8 530.4 512 509.8 512z"/></svg>';
-// "no test" glyph (flask crossed with an alert), path only — drawn as a
-// corner avatar on untested nodes in the module map
-const ICON_NO_TEST_D = 'M208 64c-17.7 0-32 14.3-32 32s14.3 32 32 32l0 336c0 61.9 50.1 112 112 112 .4 0 .8 0 1.2 0-46.7-100.6 5.1-224.4 110.8-261.2L432 128c17.7 0 32-14.3 32-32s-14.3-32-32-32L208 64zm64 192l0-128 96 0 0 128-96 0zm224 96c-79.5 0-144 64.5-144 144s64.5 144 144 144 144-64.5 144-144-64.5-144-144-144zm0 48c8.8 0 16 7.2 16 16l0 80c0 8.8-7.2 16-16 16s-16-7.2-16-16l0-80c0-8.8 7.2-16 16-16zM476 560c0-11 9-20 20-20s20 9 20 20-9 20-20 20-20-9-20-20z';
 const FA_DIFF = '<svg class="fa-icon fa-diff" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Pro v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) Copyright 2026 Fonticons, Inc.--><path d="M160 96C124.7 96 96 124.7 96 160L96 480C96 513.1 121.2 540.4 153.5 543.7L160 544L480 544L486.5 543.7C516.6 540.6 540.6 516.7 543.6 486.6L543.9 480.1L543.9 160.1C543.9 124.8 515.2 96.1 479.9 96.1L160 96zM480 480L352 480L352 448L288 448L288 480L160 480L160 160L288 160L288 192L352 192L352 160L480 160L480 480zM329 239C319.6 229.6 304.4 229.6 295.1 239L231.1 303L229.4 304.8C221.7 314.2 222.3 328.1 231.1 336.9L295.1 400.9C304.5 410.3 319.7 410.3 329 400.9C338.3 391.5 338.4 376.3 329 367L306 344L392.1 344C405.4 344 416.1 333.3 416.1 320C416.1 306.7 405.4 296 392.1 296L306 296L329 273C338.4 263.6 338.4 248.4 329 239.1z"/></svg>';
 const FA_UP_RIGHT = '<svg class="fa-icon fa-up-right" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Pro v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) Copyright 2026 Fonticons, Inc.--><path d="M512 160C512 142.3 497.7 128 480 128L256 128C238.3 128 224 142.3 224 160C224 177.7 238.3 192 256 192L402.7 192L137.4 457.4C124.9 469.9 124.9 490.2 137.4 502.7C149.9 515.2 170.2 515.2 182.7 502.7L448 237.3L448 384C448 401.7 462.3 416 480 416C497.7 416 512 401.7 512 384L512 160z"/></svg>';
 const FA_COPY = '<svg class="fa-icon fa-copy" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M288 64C252.7 64 224 92.7 224 128L224 384C224 419.3 252.7 448 288 448L480 448C515.3 448 544 419.3 544 384L544 183.4C544 166 536.9 149.3 524.3 137.2L466.6 81.8C454.7 70.4 438.8 64 422.3 64L288 64zM160 192C124.7 192 96 220.7 96 256L96 512C96 547.3 124.7 576 160 576L352 576C387.3 576 416 547.3 416 512L416 496L352 496L352 512L160 512L160 256L176 256L176 192L160 192z"/></svg>';
@@ -1765,19 +1767,22 @@ function sectionBlock(sec) {
   const body = el('div', 'sec-body');
   if (sec.summary) body.append(el('p', 'summary', sec.summary));
 
-  // Module map — filled in async by loadDiagrams() from /api/diagrams.
-  // collapsed by default — the map is orientation, not the review itself
-  const diagram = el('details', 'section-diagram');
-  diagram.dataset.secId = sec.id;
-  const dbody = el('div', 'diagram-body');
-  dbody.append(el('div', 'diagram-loading', 'Generating module map…'));
-  const dsum = el('summary');
-  dsum.append(el('span', '', 'Module map'));
-  diagram.append(dsum, dbody);
-  body.append(diagram);
+  // Section diagram, when Claude drew one for this section (hard sections only).
+  // Server-inlined from <workspace>/diagrams/<id>.svg, so there's nothing to
+  // wait for; collapsed by default — it's orientation, not the review itself.
+  const svg = (DATA.diagrams || {})[sec.id];
+  if (svg) {
+    const diagram = el('details', 'section-diagram');
+    const dbody = el('div', 'diagram-body');
+    dbody.innerHTML = svg;
+    const dsum = el('summary');
+    dsum.append(el('span', '', 'Diagram'));
+    diagram.append(dsum, dbody);
+    body.append(diagram);
+  }
 
-  // The diagram above is the section's file index now (clickable, hunk counts),
-  // so the old "N files" list/toggle is gone — just render the diffs.
+  // The sidebar's per-section file tree is the file index (see navItem), so
+  // there's no list/toggle here — just render the diffs.
   (sec.files || []).forEach(f => body.append(fileBlock(f)));
   (sec.extra_hunks || []).forEach(e => {
     const h = findHunk(e);
@@ -1801,122 +1806,6 @@ function jumpToFile(secId, path) {
     target.classList.remove('collapsed');  // expand it if collapsed (e.g. reviewed)
     target.scrollIntoView();
   }
-}
-
-// The module maps are built in the background (server spawns diagram.py), so
-// poll /api/diagrams until they land, then render each section's graph in place.
-// diagram.py writes all sections at once (atomic), so a non-empty response is
-// complete — sections with no entry never get one and shed their placeholder.
-async function loadDiagrams() {
-  if (DATA.preview || typeof mermaid === 'undefined') {
-    document.querySelectorAll('.section-diagram').forEach(n => n.remove());
-    return;
-  }
-  mermaid.initialize({
-    startOnLoad: false, securityLevel: 'loose', theme: 'base',
-    flowchart: { htmlLabels: true, curve: 'basis', padding: 8 },
-    themeVariables: {
-      fontFamily: "'Cousine', ui-monospace, monospace", fontSize: '12px',
-      primaryColor: '#ffffff', primaryBorderColor: '#d1d9e0',
-      primaryTextColor: '#1f2328', lineColor: '#59636e',
-      clusterBkg: '#f6f8fa', clusterBorder: '#d1d9e0',
-    },
-  });
-  for (let tries = 0; tries < 20; tries++) {
-    let sections = null;
-    try {
-      sections = (await (await api('/api/diagrams')).json()).sections;
-    } catch (e) { /* server briefly away; retry */ }
-    if (sections && Object.keys(sections).length) {
-      document.querySelectorAll('.section-diagram').forEach(c => {
-        const d = sections[c.dataset.secId];
-        if (d && d.mermaid) renderDiagram(c, d.mermaid, d.nodes || {}, d.untested || []);
-        else c.remove();
-      });
-      return;
-    }
-    await new Promise(r => setTimeout(r, 1500));
-  }
-  document.querySelectorAll('.section-diagram').forEach(n => n.remove());
-}
-
-async function renderDiagram(container, def, nodes, untested) {
-  try {
-    const secId = container.dataset.secId;
-    const id = 'mmd-' + secId.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const { svg } = await mermaid.render(id, def);
-    const box = container.querySelector('.diagram-body');
-    box.innerHTML = svg;
-    // Render at the diagram's natural size so labels stay legible; the container
-    // scrolls (overflow:auto) when a many-file section makes the graph wider or
-    // taller than the panel. Mermaid emits width="100%" + max-width:<natural>px,
-    // which otherwise *shrinks* the whole graph — text and all — to fit, going
-    // unreadable past ~10 nodes. Pin the intrinsic px from the viewBox to opt out.
-    const svgEl = container.querySelector('svg');
-    const vb = svgEl && svgEl.viewBox.baseVal;
-    if (vb && vb.width) {
-      svgEl.style.maxWidth = 'none';
-      svgEl.style.width = Math.ceil(vb.width) + 'px';
-      svgEl.style.height = Math.ceil(vb.height) + 'px';
-    }
-    const untestedSet = new Set(untested);
-    // Per node, off the element id (…-flowchart-<nodeId>-<n>) — stable across
-    // Mermaid 10/11, unlike the version-fragile `click … call` binding.
-    container.querySelectorAll('g.node').forEach(g => {
-      const m = (g.id || '').match(/flowchart-(n\d+)-\d+$/);
-      if (!m) return;
-      const nodeId = m[1];
-      const path = nodes[nodeId];
-      if (path) {                                   // click jumps to the diff
-        g.classList.add('clickable');
-        g.addEventListener('click', () => jumpToFile(secId, path));
-      }
-      if (untestedSet.has(nodeId)) markNoTest(g);   // progressive enhancement
-    });
-  } catch (e) {
-    container.remove();  // an unrenderable graph shouldn't leave a stuck spinner
-  }
-}
-
-// Pin a circular "no test" avatar to the node's top-left corner. Drawn as an
-// SVG group in the node's own coordinate space, so it stays put through
-// Mermaid's viewBox scaling and never touches the label's flow. Best-effort: if
-// the node shape ever changes, the node still renders (and keeps its dashed
-// border) — the avatar is enhancement, not load-bearing.
-const SVGNS = 'http://www.w3.org/2000/svg';
-function markNoTest(g) {
-  try {
-    if (g.querySelector('.no-test-avatar')) return;
-    const rect = g.querySelector('rect');
-    if (!rect) return;  // needs a box to sit on
-    // pin to the box's top-left corner (rect origin attrs; centered nodes are
-    // at -w/2,-h/2). Centering the circle on the corner straddles it, keeping
-    // the avatar clear of the label even when a long name nearly fills the box.
-    const w = parseFloat(rect.getAttribute('width'));
-    const h = parseFloat(rect.getAttribute('height'));
-    const x = rect.getAttribute('x') != null ? parseFloat(rect.getAttribute('x')) : -w / 2;
-    const y = rect.getAttribute('y') != null ? parseFloat(rect.getAttribute('y')) : -h / 2;
-    const r = 10, isz = 13, cx = x, cy = y;
-    const svg = (tag, attrs, styles) => {
-      const n = document.createElementNS(SVGNS, tag);
-      for (const k in attrs) n.setAttribute(k, attrs[k]);
-      // Mermaid's stylesheet fills node <circle>/<path> — inline !important wins.
-      for (const k in styles) n.style.setProperty(k, styles[k], 'important');
-      return n;
-    };
-    // no pointer-events:none — the avatar needs hover for its <title> tooltip;
-    // clicks still bubble to the node's jump handler since it's a child of it
-    const avatar = svg('g', { class: 'no-test-avatar' });
-    const box = svg('svg', { x: cx - isz / 2, y: cy - isz / 2, width: isz,
-                             height: isz, viewBox: '0 0 640 640' });
-    box.append(svg('path', { d: ICON_NO_TEST_D }, { fill: '#ffffff' }));
-    const title = svg('title', {});  // native tooltip on hover
-    title.textContent = 'No test found for this module';
-    // stroke:none overrides Mermaid's default node <circle> border
-    avatar.append(title,
-      svg('circle', { cx, cy, r }, { fill: '#bf8700', stroke: 'none' }), box);
-    g.append(avatar);  // last child → paints on top of the box + label
-  } catch (e) { /* enhancement only */ }
 }
 
 // Group a flat path list into a nested {dirs, files} tree. No dependency —
@@ -2270,7 +2159,6 @@ function initKeyboard() {
 }
 
 build();
-loadDiagrams();
 initKeyboard();
 </script>
 </body>

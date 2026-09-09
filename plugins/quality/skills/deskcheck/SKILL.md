@@ -124,6 +124,61 @@ For a **scoped review** (user named a subset), also set a top-level
 drift detection (below) to the reviewed area — without it, every out-of-scope
 changed file would be flagged as unsectioned.
 
+## 3.5 Draw a diagram for the hard sections
+
+Only if the **`diagram-design`** skill is installed — check your available-skills
+list for it. It isn't installed everywhere. If it's missing, skip this whole step
+and go straight to §4; the review works exactly the same without it, and no
+diagram is far better than a hand-drawn one.
+
+A section diagram is orientation: it explains **the mechanism the section
+changes**, not its file list (the sidebar's file tree is the file index). Draw
+one only where a reviewer actually needs the orientation:
+
+- Sections with `difficulty >= 4`, hardest first, **cap 3**. Never the synthetic
+  `_unsectioned` section.
+- Skip any section that already has `$WS/diagrams/<id>.svg` — resume is free.
+
+Prefer **one subagent per section, launched in parallel**, each invoking
+`diagram-design`. That keeps its ~600 lines of instructions plus a per-type
+reference out of this session's context, which has to live on for the whole
+review watching drift and notes. If subagents aren't available, invoke the skill
+inline, one section at a time.
+
+Give each one: the section's title, its summary, and its diff — then
+
+- **Type**: pick the visual type from diagram-design's catalog that fits what
+  this change *does* — sequence for a request path, flowchart for new branching,
+  state machine for a new lifecycle, architecture for new components, data flow,
+  dependency graph. Don't force one shape onto every section.
+- **Subject**: the mechanism the branch introduces or changes, and what deserves
+  scrutiny while reviewing it. The accent colour (1–2 nodes, not five) marks the
+  parts that changed.
+- **Style**: use the default profile, **skip the first-time branding gate, and
+  ask no questions** — nobody is waiting to answer them. Palette matches the
+  review UI: paper `#ffffff`, ink `#1f2328`, muted `#59636e`, accent `#0969da`.
+  Size: the **`doc-inline` preset** (`viewBox="0 0 960 600"`) with the
+  **`presentation` type ramp** (16px node names, 12px sublabels, 12px arrow
+  labels) — not the standard ramp. The review panel is ~730px, so the diagram
+  renders at ~0.76 scale to fit without sideways scrolling; the bigger ramp is
+  what lands the labels at their intended size once it's scaled down.
+- **Never hand-author the SVG.** Tell each subagent: invoke the
+  `diagram-design` skill, and if it can't load it, stop and say so rather than
+  drawing anything itself. A hand-rolled diagram looks legitimate in the UI
+  while being off-system and unreviewed — the one outcome worse than no diagram.
+  If a section's draw fails, skip that section, don't retry, and mention it once
+  at handoff rather than silently shipping two diagrams where you meant three.
+- **Output**: write the generated HTML to a scratch dir — **never into the
+  user's repo** — then extract its first `<svg …>…</svg>` block and write that,
+  alone, to `$WS/diagrams/<section-id>.svg` (`mkdir -p "$WS/diagrams"` first).
+  No XML prolog and no font `@import`: the block is self-contained and the page
+  supplies the fonts.
+
+The server inlines whatever `.svg` files are in that directory on every page
+load, so a diagram drawn later — after handoff, or when a `DRIFT_DETECTED`
+fold-in creates or promotes a section to difficulty ≥ 4 — reaches the reviewer
+on their next refresh. No restart, same as every other mid-review edit.
+
 ## Drift: new commits and working-tree edits mid-review
 
 The server re-resolves the merge base and re-diffs on every page load, so
@@ -162,13 +217,6 @@ as a task-exit notification — see drift below). The server binds a free port
 on startup. Read that line from the background task's **output file** to learn
 the actual port — use it for the curl check, the browser open, the URL you give
 the user, and as the file the drift Monitor tails.
-
-On startup the server also spawns `scripts/diagram.py` in the background to
-build a per-section **module map** (files as nodes, source→test links, an ⚠ on
-untested sources, clickable to jump to the diff). This never blocks serving —
-the page loads immediately and the map fills in a moment later. No action
-needed from you; it regenerates on every launch (so a resumed review stays
-current).
 
 When the branch has a PR, add `--github-sync --watch-comments` too:
 `--watch-comments` ETag-polls the PR every 60s (304s are rate-limit-free) and
@@ -339,10 +387,6 @@ comment composer.
 - `scripts/server.py` — the review server (stdlib http.server + sqlite)
 - `scripts/render_diff.py` — standalone: file + target → syntax-highlighted
   HTML hunks (used by the server, also composable on its own)
-- `scripts/diagram.py` — standalone: sections.json + diff → `diagrams.json`, a
-  per-section Mermaid module map (source↔test pairing, untested-source ⚠,
-  directory grouping, click-to-jump). The server spawns it in the background on
-  startup; `--check` self-tests
 - `scripts/sections.py` — CRUD CLI for sections.json (list / show /
   add-section / update-section / remove-section / add-files / remove-files /
   add-hunk / remove-hunk / prune). Author the initial sections.json with one
