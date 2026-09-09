@@ -168,11 +168,27 @@ Give each one: the section's title, its summary, and its diff — then
   while being off-system and unreviewed — the one outcome worse than no diagram.
   If a section's draw fails, skip that section, don't retry, and mention it once
   at handoff rather than silently shipping two diagrams where you meant three.
-- **Output**: write the generated HTML to a scratch dir — **never into the
-  user's repo** — then extract its first `<svg …>…</svg>` block and write that,
-  alone, to `$WS/diagrams/<section-id>.svg` (`mkdir -p "$WS/diagrams"` first).
-  No XML prolog and no font `@import`: the block is self-contained and the page
-  supplies the fonts.
+- **No browser, at any point.** Don't open, serve, preview, screenshot, or
+  Playwright-render anything. diagram-design's §6/§9 point at
+  `scripts/verify-geometry.py` for the label-mask rule, but that script only
+  exists in a repo checkout, not an installed skill — **skip it, and don't
+  substitute a live render for it.** The installed skill's own
+  `python3 <skill-dir>/scripts/self_check.py <file>` is static, needs no
+  browser, and is the only verification to run. Don't export a PNG either
+  (diagram-design's §12 calls export manual and unprompted-never).
+- **Output — the SVG is the deliverable, the HTML is scaffolding.**
+  diagram-design's §12 always writes a self-contained `.html`; let it, but into
+  a scratch/temp dir, **never the user's repo**. Extract its first
+  `<svg …>…</svg>` block and write that, alone, to
+  `$WS/diagrams/<section-id>.svg` (`mkdir -p "$WS/diagrams"` first). No XML
+  prolog and no font `@import`: the block is self-contained and the page
+  supplies the fonts. Then **delete the scratch HTML and any stray PNG** — the
+  `.svg` is the only artifact anyone wants, and leftovers just accumulate.
+
+**Shut the drawers down.** Once each subagent has reported and its `.svg` is on
+disk, stop it (`TaskStop` with the agent's name). They otherwise sit idle for the
+rest of the review — which lasts as long as the server does — and a stray agent
+can wake up later and redraw over a diagram you've already accepted.
 
 The server inlines whatever `.svg` files are in that directory on every page
 load, so a diagram drawn later — after handoff, or when a `DRIFT_DETECTED`
