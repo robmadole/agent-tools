@@ -139,6 +139,22 @@ one only where a reviewer actually needs the orientation:
   `_unsectioned` section.
 - Skip any section that already has `$WS/diagrams/<id>.svg` — resume is free.
 
+**Then ask before drawing.** Diagrams are the most expensive thing this skill
+does — each one is a subagent that loads diagram-design's whole instruction set
+plus a type reference before it draws — and they're worth it on some branches
+and not others. That's the reviewer's call, not yours, so put it to them with
+**AskUserQuestion**: name the eligible sections so they can judge, and offer
+
+- draw all of them (however many are eligible, up to the cap of 3),
+- draw only the hardest one, and
+- skip diagrams entirely.
+
+Collapse to a straight yes/no when only one section is eligible. Ask **once**
+per review: if they declined, don't raise it again when drift later promotes a
+section; if they accepted, draw for newly-eligible sections without re-asking.
+Skip the question outright — and this whole step — when nothing is eligible, or
+when every eligible section already has its `.svg` from an earlier run.
+
 Prefer **one subagent per section, launched in parallel**, each invoking
 `diagram-design`. That keeps its ~600 lines of instructions plus a per-type
 reference out of this session's context, which has to live on for the whole
