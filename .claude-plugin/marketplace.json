@@ -43,6 +43,18 @@
         "pull-request"
       ],
       "version": "1.0.13"
+    },
+    {
+      "name": "humanity",
+      "description": "Tools for keeping the human in the loop",
+      "source": "./plugins/humanity",
+      "category": "productivity",
+      "tags": [
+        "alignment",
+        "communication",
+        "collaboration"
+      ],
+      "version": "1.0.0"
     }
   ]
 }

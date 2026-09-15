@@ -23,6 +23,8 @@ The manifest schema follows `https://anthropic.com/claude-code/marketplace.schem
   - `hobgoblin` — Examine similar files for consistency violations and produce a list of differences.
 - **`quality`** — Tools for reviewing code quality.
   - `deskcheck` — Local, interactive PR review: splits a branch diff into sections and serves a web UI with resumable per-section "reviewed" state.
+- **`humanity`** — Tools for keeping the human in the loop.
+  - `whoa-hang-on` — Stop and re-align a human who has lost the thread: backtrack from the last message and explain in a ladder of short, self-contained rungs, one per message, checking understanding at each rung before continuing.
 
 ## Adding a New Skill
 

@@ -1,0 +1,8 @@
+{
+  "name": "humanity",
+  "description": "Tools for keeping the human in the loop",
+  "version": "1.0.0",
+  "author": {
+    "name": "Rob Madole"
+  }
+}
