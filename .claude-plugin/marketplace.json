@@ -46,11 +46,11 @@
     },
     {
       "name": "humanity",
-      "description": "Tools for keeping the human in the loop",
+      "description": "Agent to human interaction, or dealing with the wetware simians who walk on two legs",
       "source": "./plugins/humanity",
       "category": "productivity",
       "tags": [
-        "alignment",
+        "human-interaction",
         "communication",
         "collaboration"
       ],

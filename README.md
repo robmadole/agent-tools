@@ -14,6 +14,7 @@ claude plugin marketplace add robmadole/agent-tools
 claude plugin install testing@agent-tools
 claude plugin install develop@agent-tools
 claude plugin install quality@agent-tools
+claude plugin install humanity@agent-tools
 ```
 
 Using open agent skills (for other Agents):
@@ -49,6 +50,14 @@ Tools for reviewing code quality.
 | Skill | Description |
 |-------|-------------|
 | **deskcheck** | Local, interactive PR review: splits a branch diff into sections and serves a web UI with resumable per-section "reviewed" state. |
+
+### humanity
+
+Agent to human interaction, or dealing with the wetware simians who walk on two legs.
+
+| Skill | Description |
+|-------|-------------|
+| **whoa-hang-on** | Run `/whoa-hang-on` when you've lost the thread. The agent stops, backtracks from its last message, and catches you up as a ladder of short, self-contained rungs, one per message, checking you understand each rung before climbing to the next. |
 
 ## Development
 
