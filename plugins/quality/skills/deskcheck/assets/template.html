@@ -266,6 +266,35 @@
   .delta-hunk { border-top:1px solid var(--border); }
   .delta-hunk:first-child { border-top:none; }
   .delta-hunk .hunk-body { overflow-x:auto; }
+  /* Code | Rendered switch on Markdown file headers (GitHub-style) */
+  .view-toggle { display:inline-flex; flex:none; border:1px solid var(--border);
+                 border-radius:6px; overflow:hidden; }
+  .view-toggle button { display:flex; align-items:center; border:none; padding:3px 8px;
+                        background:var(--panel); color:var(--muted); cursor:pointer; }
+  .view-toggle button + button { border-left:1px solid var(--border); }
+  .view-toggle button:hover { color:var(--accent); }
+  .view-toggle button.on { background:var(--accent); color:#fff; }
+  .file.md-rendered > .file-body, .file.md-rendered > .delta-bar,
+  .file.md-rendered > .delta-body, .file:not(.md-rendered) > .md-body,
+  .collapsed > .md-body { display:none; }
+  .md-body { padding:16px 24px; }
+  .md-body :is(h1,h2,h3,h4,h5,h6) { margin:20px 0 10px; }
+  .md-body :is(h1,h2) { padding-bottom:.3em; border-bottom:1px solid var(--border); }
+  .md-body .contains-task-list { list-style:none; padding-left:4px; }
+  /* rich diff marks from visual-dom-diff: inline text changes are ins/del,
+     whole added/removed blocks get the class on the element itself */
+  .md-body ins.vdd-added { background:#abf2bc; text-decoration:none; }
+  .md-body del.vdd-removed { background:#ffc1bc; }
+  .md-body ins.vdd-modified { background:#fff8c5; text-decoration:none; }
+  /* block marks: tint spills 6px into the pane's gutter with a 3px bar outside
+     it, so neither shifts nor overlaps the content */
+  .md-body .vdd-added:not(ins) { background:var(--add-bg);
+    box-shadow:-6px 0 0 var(--add-bg), -9px 0 0 var(--done); }
+  .md-body .vdd-removed:not(del) { background:var(--del-bg); text-decoration:line-through;
+    box-shadow:-6px 0 0 var(--del-bg), -9px 0 0 #cf222e; }
+  .md-body .vdd-modified:not(ins) { box-shadow:-6px 0 0 var(--panel), -9px 0 0 #d4a72c; }
+  .md-body table { border-collapse:collapse; }
+  .md-body th, .md-body td { border:1px solid var(--border); padding:4px 10px; }
   .sec.conv { border-color:rgba(9,105,218,.35); outline:1px solid rgba(9,105,218,.35); }
   .comment { display:flex; gap:10px; align-items:flex-start; padding:14px 16px;
              font-size:13px; background:var(--panel); }
@@ -551,6 +580,7 @@
     <div class="kbd-hint">Esc or click outside to close</div>
   </div>
 </div>
+<script src="/assets/visual-dom-diff.js"></script>
 <script>
 const DATA = __DATA__;
 const state = DATA.state || {};
@@ -564,7 +594,9 @@ const FA_COPY = '<svg class="fa-icon fa-copy" xmlns="http://www.w3.org/2000/svg"
 const FA_EXPAND = '<svg class="fa-icon fa-expand-updown" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Pro v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) Copyright 2026 Fonticons, Inc.--><path d="M297.4 41.4C309.9 28.9 330.2 28.9 342.7 41.4L406.7 105.4C415.9 114.6 418.6 128.3 413.6 140.3C408.6 152.3 396.9 160 384 160L352 160L352 208C352 225.7 337.7 240 320 240C302.3 240 288 225.7 288 208L288 160L256 160C243.1 160 231.4 152.2 226.4 140.2C221.4 128.2 224.2 114.5 233.3 105.3L297.3 41.3zM288 480L288 432C288 414.3 302.3 400 320 400C337.7 400 352 414.3 352 432L352 480L384 480C396.9 480 408.6 487.8 413.6 499.8C418.6 511.8 415.8 525.5 406.7 534.7L342.7 598.7C330.2 611.2 309.9 611.2 297.4 598.7L233.4 534.7C224.2 525.5 221.5 511.8 226.5 499.8C231.5 487.8 243.1 480 256 480L288 480zM192 320C192 337.7 177.7 352 160 352C142.3 352 128 337.7 128 320C128 302.3 142.3 288 160 288C177.7 288 192 302.3 192 320zM266.7 352C249 352 234.7 337.7 234.7 320C234.7 302.3 249 288 266.7 288C284.4 288 298.7 302.3 298.7 320C298.7 337.7 284.4 352 266.7 352zM405.4 320C405.4 337.7 391.1 352 373.4 352C355.7 352 341.4 337.7 341.4 320C341.4 302.3 355.7 288 373.4 288C391.1 288 405.4 302.3 405.4 320zM480 352C462.3 352 448 337.7 448 320C448 302.3 462.3 288 480 288C497.7 288 512 302.3 512 320C512 337.7 497.7 352 480 352z"/></svg>';
 const FA_PEN = '<svg class="fa-icon fa-pen" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M416.9 85.2L372 130.1L509.9 268L554.8 223.1C568.4 209.6 576 191.2 576 172C576 152.8 568.4 134.4 554.8 120.9L519.1 85.2C505.6 71.6 487.2 64 468 64C448.8 64 430.4 71.6 416.9 85.2zM338.1 164L122.9 379.1C112.2 389.8 104.4 403.2 100.3 417.8L64.9 545.6C62.6 553.9 64.9 562.9 71.1 569C77.3 575.1 86.2 577.5 94.5 575.2L222.3 539.7C236.9 535.6 250.2 527.9 261 517.1L476 301.9L338.1 164z"/></svg>';
 const FA_TRASH = '<svg class="fa-icon fa-trash" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M232.7 69.9L224 96L128 96C110.3 96 96 110.3 96 128C96 145.7 110.3 160 128 160L512 160C529.7 160 544 145.7 544 128C544 110.3 529.7 96 512 96L416 96L407.3 69.9C402.9 56.8 390.7 48 376.9 48L263.1 48C249.3 48 237.1 56.8 232.7 69.9zM512 208L128 208L149.1 531.1C150.7 556.4 171.7 576 197 576L443 576C468.3 576 489.3 556.4 490.9 531.1L512 208z"/></svg>';
-const FA_COMMENTS = '<svg class="fa-icon fa-comments" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><path d="M416 208C416 305.2 330 384 224 384C197.3 384 171.9 379 148.8 370L67.2 413.2C57.9 418.1 46.5 416.4 39 409C31.5 401.6 29.8 390.1 34.8 380.8L70.4 313.6C46.3 284.2 32 247.6 32 208C32 110.8 118 32 224 32C330 32 416 110.8 416 208zM416 576C321.9 576 243.6 513.9 227.2 432C347.2 430.5 451.5 345.1 463 229.3C546.3 248.5 608 317.6 608 400C608 439.6 593.7 476.2 569.6 505.6L605.2 572.8C610.1 582.1 608.4 593.5 601 601C593.6 608.5 582.1 610.2 572.8 605.2L491.2 562C468.1 571 442.7 576 416 576z"/></svg>';
+const FA_CODE = '<svg class="fa-icon fa-code" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M392.8 65.2C375.8 60.3 358.1 70.2 353.2 87.2L225.2 535.2C220.3 552.2 230.2 569.9 247.2 574.8C264.2 579.7 281.9 569.8 286.8 552.8L414.8 104.8C419.7 87.8 409.8 70.1 392.8 65.2zM457.4 201.3C444.9 213.8 444.9 234.1 457.4 246.6L530.8 320L457.4 393.4C444.9 405.9 444.9 426.2 457.4 438.7C469.9 451.2 490.2 451.2 502.7 438.7L598.7 342.7C611.2 330.2 611.2 309.9 598.7 297.4L502.7 201.4C490.2 188.9 469.9 188.9 457.4 201.4zM182.7 201.3C170.2 188.8 149.9 188.8 137.4 201.3L41.4 297.3C28.9 309.8 28.9 330.1 41.4 342.6L137.4 438.6C149.9 451.1 170.2 451.1 182.7 438.6C195.2 426.1 195.2 405.8 182.7 393.3L109.3 320L182.6 246.6C195.1 234.1 195.1 213.8 182.6 201.3z"/></svg>';
+const FA_MARKDOWN = '<svg class="fa-icon fa-markdown" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><!--!Font Awesome Free v7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2026 Fonticons, Inc.--><path d="M593.8 123.1L46.2 123.1C20.7 123.1 0 143.8 0 169.2L0 470.7C0 496.2 20.7 516.9 46.2 516.9L593.9 516.9C619.4 516.9 640.1 496.2 640 470.8L640 169.2C640 143.8 619.3 123.1 593.8 123.1zM338.5 424.6L277 424.6L277 304.6L215.5 381.5L154 304.6L154 424.6L92.3 424.6L92.3 215.4L153.8 215.4L215.3 292.3L276.8 215.4L338.3 215.4L338.3 424.6L338.5 424.6zM473.8 427.7L381.5 320L443 320L443 215.4L504.5 215.4L504.5 320L566 320L473.8 427.7z"/></svg>';
+const FA_COMMENTS ='<svg class="fa-icon fa-comments" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640"><path d="M416 208C416 305.2 330 384 224 384C197.3 384 171.9 379 148.8 370L67.2 413.2C57.9 418.1 46.5 416.4 39 409C31.5 401.6 29.8 390.1 34.8 380.8L70.4 313.6C46.3 284.2 32 247.6 32 208C32 110.8 118 32 224 32C330 32 416 110.8 416 208zM416 576C321.9 576 243.6 513.9 227.2 432C347.2 430.5 451.5 345.1 463 229.3C546.3 248.5 608 317.6 608 400C608 439.6 593.7 476.2 569.6 505.6L605.2 572.8C610.1 582.1 608.4 593.5 601 601C593.6 608.5 582.1 610.2 572.8 605.2L491.2 562C468.1 571 442.7 576 416 576z"/></svg>';
 
 const $ = (s, r) => (r || document).querySelector(s);
 
@@ -1651,6 +1683,12 @@ function fileBlock(path) {
   else if (isBinary) label.textContent = 'binary';
   else label.textContent = hunks.length + (hunks.length === 1 ? ' hunk' : ' hunks');
   head.append(label);
+  // Markdown gets a Code | Rendered switch and opens rendered (a modified doc's
+  // rendered view is a rich diff). A stale file opens on code so its
+  // changes-since-review delta stays front and center.
+  const deleted = hunks.length === 1 && r0 && r0.n === 0 && r0.nl === 0;
+  const mdBody = /\.md$/i.test(path) && !isBinary && !deleted
+    ? markdownView(div, head, path, !isStale) : null;
   const mb = markBtn(key);
   if (single) {
     const hk = hunkKey(path, hunks[0]);
@@ -1750,8 +1788,85 @@ function fileBlock(path) {
   } else {
     div.append(head, body);
   }
+  if (mdBody) div.append(mdBody);
   collapsible(div, head);
   return div;
+}
+
+// Build the Code | Rendered button group into `head` and return the rendered
+// pane. The .md-rendered class on the file flips which body shows (pure CSS).
+// The pane fetches its HTML the first time it scrolls into view, so docs you
+// never look at never hit GitHub's markdown API.
+function markdownView(fileDiv, head, path, rendered) {
+  const pane = el('div', 'md-body comment-body');
+  pane.innerHTML = '<div class="empty">Rendering…</div>';
+  const group = el('div', 'view-toggle');
+  const show = on => {
+    fileDiv.classList.toggle('md-rendered', on);
+    [code, md].forEach(b => {
+      const pressed = (b === md) === on;
+      b.classList.toggle('on', pressed);
+      b.setAttribute('aria-pressed', String(pressed));
+    });
+  };
+  const mk = (icon, title, on) => {
+    const b = el('button');
+    b.type = 'button'; b.innerHTML = icon; b.title = title;
+    b.setAttribute('aria-label', title);
+    b.onclick = ev => {
+      ev.stopPropagation();                        // header click would collapse
+      fileDiv.classList.remove('collapsed');       // switching views means "show me"
+      show(on);
+    };
+    return b;
+  };
+  const code = mk(FA_CODE, 'Code', false);
+  const md = mk(FA_MARKDOWN, 'Rendered', true);
+  group.append(code, md);
+  head.append(group);
+  show(rendered);
+  if (DATA.preview) {
+    pane.innerHTML = '<div class="empty">Rendered Markdown comes from the server.</div>';
+    return pane;
+  }
+  const obs = new IntersectionObserver(entries => {
+    if (!entries.some(en => en.isIntersecting)) return;
+    obs.disconnect();
+    api('/api/markdown?path=' + encodeURIComponent(path))
+      .then(r => r.json())
+      .then(d => {
+        if (d.ok && d.old_html && window.VisualDomDiff) {
+          pane.textContent = '';
+          const diffed = VisualDomDiff.visualDomDiff(mdDom(d.old_html), mdDom(d.html));
+          pane.append(...diffed.firstChild.childNodes);   // unwrap mdDom's root div
+        } else if (d.ok) pane.innerHTML = d.html;   // new file: nothing to diff against
+        else pane.innerHTML = '<div class="empty">Couldn’t render this Markdown '
+          + '(it renders through GitHub’s markdown API, so it needs an '
+          + 'authenticated gh). Switch to Code to review it.</div>';
+      })
+      .catch(() => { pane.innerHTML = '<div class="empty">Couldn’t render this Markdown.</div>'; });
+  }, { rootMargin: '800px 0px' });
+  obs.observe(pane);
+  return pane;
+}
+
+// Parse rendered Markdown for diffing. GitHub's HTML puts newlines between
+// block tags; inside tables/lists those whitespace nodes would diff into stray
+// <ins>/<del> elements, which a table lays out as phantom cells — drop them.
+// Whitespace inside text-bearing elements (p, li, td) is left alone.
+function mdDom(html) {
+  const root = el('div');
+  root.innerHTML = html;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const drop = [];
+  for (let n; (n = walker.nextNode());) {
+    const p = n.parentNode;
+    if (!n.data.trim() && (p === root ||
+        /^(TABLE|THEAD|TBODY|TFOOT|TR|UL|OL|MARKDOWN-ACCESSIBLITY-TABLE)$/.test(p.nodeName)))
+      drop.push(n);
+  }
+  drop.forEach(n => n.remove());
+  return root;
 }
 
 function sectionBlock(sec) {

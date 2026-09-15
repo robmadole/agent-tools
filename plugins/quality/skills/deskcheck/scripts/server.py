@@ -30,7 +30,7 @@ from urllib.parse import parse_qs, urlparse
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from render_diff import (_diff_entries, _git, _lexer_for, context_rows,
                          file_hunks, hunk_html, merge_base, multi_file_hunks,
-                         new_side)
+                         new_side, old_side)
 from fetch_comments import render_md, threads_index  # GFM→HTML; thread resolution lookup
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
@@ -600,6 +600,38 @@ def rendered_file(args, con, base, path):
     return {'path': path, 'hunks': out, 'total_new': total_new}
 
 
+def rendered_markdown(args, con, base, path):
+    """(new_html, old_html) for a Markdown file; '' where a side is empty or
+    rendering failed. The page diffs the two with visual-dom-diff.
+
+    Goes through GitHub's /markdown API (render_md — same renderer as comment
+    bodies, so it's sanitized GFM), cached by content hash so reloads don't
+    re-hit GitHub. Failures (no gh auth, offline) aren't cached.
+    """
+    return (_md_cached(args, con, new_side(args.repo, base, path)),
+            _md_cached(args, con, old_side(args.repo, base, path)))
+
+
+def _md_cached(args, con, content):
+    if not content.strip():
+        return ''                # new file's base side: nothing to ask GitHub
+    ck = 'md:' + hashlib.sha1(content.encode()).hexdigest()
+    with LOCK:
+        row = con.execute('SELECT html FROM render_cache WHERE cache_key=?',
+                          (ck,)).fetchone()
+    if row:
+        return row[0]
+    # ponytail: relative links/images in the doc resolve against this local
+    # server and break; rewrite them to raw paths if that ever matters
+    body = render_md(args.repo, _slug(args) or '', content)
+    if body:
+        with LOCK:
+            con.execute('INSERT OR REPLACE INTO render_cache(cache_key, html) '
+                        'VALUES(?, ?)', (ck, body))
+            con.commit()
+    return body
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
     args = None
@@ -663,6 +695,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(404, b'not found')
                 return
             self._send(200, json.dumps(payload).encode(), 'application/json')
+        elif url.path == '/api/markdown':
+            path = parse_qs(url.query).get('path', [''])[0]
+            try:
+                body, old = rendered_markdown(self.args, self.con, self.base, path)
+            except Exception:
+                body = old = ''
+            self._send(200, json.dumps({'ok': bool(body), 'html': body,
+                                        'old_html': old}).encode(),
+                       'application/json')
         elif url.path == '/api/context':
             q = parse_qs(url.query)
             try:

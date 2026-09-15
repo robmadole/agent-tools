@@ -49,6 +49,12 @@ Built 2026-07-22 → 2026-07-24.
   it appears only when the last hunk doesn't already reach EOF.
 - Renders working tree + staged changes (diff vs merge-base, re-anchored per
   page load).
+- **Markdown Code | Rendered switch** on `.md` file headers. Docs open
+  Rendered (files changed since your review open on Code, for the delta); a
+  modified doc's Rendered view is a rich diff
+  (base and current sides rendered by GitHub's `/markdown` API, cached by
+  content hash, then diffed in the page by the vendored
+  `assets/visual-dom-diff.js` — rebuild steps in its header comment).
 
 ## Performance
 - **Lazy diffs** — the page ships structure only (~80 KB); hunk bodies load

@@ -83,8 +83,30 @@ DEFAULT_BASE = {
         '    payload = request.json()\n'
         '    process(payload)\n'
         '    return {"ok": True}\n',
+    'docs/auth.md':
+        '# Auth\n\n'
+        'Tokens expire after one hour.\n\n'
+        'Sessions are stored in cookies.\n\n'
+        '| Setting | Default |\n|---|---|\n'
+        '| `ttl` | 3600 |\n| `rotate` | false |\n',
 }
 DEFAULT_FEATURE = {
+    # modified doc (Rendered shows a rich diff: added text, a formatting
+    # change, a removed paragraph, a table cell, a new section) + brand-new doc
+    'docs/auth.md':
+        '# Auth\n\n'
+        'Tokens expire after **one hour** and rotate on every refresh.\n\n'
+        '| Setting | Default |\n|---|---|\n'
+        '| `ttl` | 3600 |\n| `rotate` | true |\n\n'
+        '## Revocation\n\n'
+        '- A refreshed token revokes the one it replaced.\n'
+        '- Revoked tokens fail `validate()`.\n',
+    'docs/token-rotation.md':
+        '# Token rotation\n\n'
+        'Every refresh issues a new token and revokes the prior one.\n\n'
+        '| Field | Meaning |\n|---|---|\n'
+        '| `rotated_from` | value of the revoked token |\n\n'
+        '- [x] revoke prior token\n- [ ] emit a metric\n',
     'src/auth/tokens.py':
         'import time\n\n\n'
         'def issue_token(user_id, rotate_from=None):\n'
@@ -162,6 +184,9 @@ DEFAULT_SECTIONS = {
         {'id': 'ui', 'title': 'Nav signed-in state', 'difficulty': 2,
          'summary': 'Show the signed-in user in the top nav.',
          'files': ['web/components/navigation/UserMenu.jsx']},
+        {'id': 'docs', 'title': 'Rotation docs', 'difficulty': 1,
+         'summary': 'Document token rotation.',
+         'files': ['docs/token-rotation.md', 'docs/auth.md']},
     ],
 }
 
@@ -542,6 +567,15 @@ def run_check():
             f'http://127.0.0.1:{port}/api/filediff?path=src/auth/tokens.py').read())
         assert len(fd['hunks']) >= 2, f'expected multi-hunk tokens.py, got {fd}'
         assert '<table class="diff">' in fd['hunks'][0]['html'], fd
+        # rendered Markdown goes through GitHub's API: only assert content when
+        # gh could render it, so the check still passes offline
+        md = json.loads(urllib.request.urlopen(
+            f'http://127.0.0.1:{port}/api/markdown?path=docs/token-rotation.md').read())
+        assert not md['ok'] or '<table' in md['html'], md
+        assert md['old_html'] == '', f'new file has no base side: {md}'
+        md = json.loads(urllib.request.urlopen(
+            f'http://127.0.0.1:{port}/api/markdown?path=docs/auth.md').read())
+        assert not md['ok'] or 'Sessions are stored' in md['old_html'], md
 
         t_mark_partial(repo, ws, port)
         assert reviewed_files(ws) == ['src/auth/tokens.py'], reviewed_files(ws)

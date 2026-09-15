@@ -214,12 +214,21 @@ def new_side(repo, base, path, ref=None):
     With `ref`, extracts the content as of that commit instead of the
     working tree (used to reconstruct historical review snapshots).
     """
+    return _side(repo, base, path, ref, (' ', '+'))
+
+
+def old_side(repo, base, path):
+    """The file's base content as git's diff presents it — new_side()'s mirror."""
+    return _side(repo, base, path, None, (' ', '-'))
+
+
+def _side(repo, base, path, ref, keep):
     args = ['diff', '--no-color', '-U999999', base] + ([ref] if ref else [])
     diff = _git(repo, *args, '--', path)
     lines = []
     for h in parse_hunks(diff):
         for line in h['lines']:
-            if line[:1] in (' ', '+'):
+            if line[:1] in keep:
                 lines.append(line[1:])
     return '\n'.join(lines)
 
