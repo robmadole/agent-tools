@@ -2,15 +2,30 @@
   "mcpServers": {
     "playwright-1": {
       "command": "npx",
-      "args": ["@playwright/mcp@latest", "--test-id-attribute=b1", "--user-data-dir=./.playwright-user-data.1"]
+      "args": [
+        "@playwright/mcp@latest",
+        "--isolated",
+        "--ignore-https-errors",
+        "--output-dir=./browser-tests/tmp"
+      ]
     },
     "playwright-2": {
       "command": "npx",
-      "args": ["@playwright/mcp@latest", "--test-id-attribute=b2", "--user-data-dir=./.playwright-user-data.2"]
+      "args": [
+        "@playwright/mcp@latest",
+        "--isolated",
+        "--ignore-https-errors",
+        "--output-dir=./browser-tests/tmp"
+      ]
     },
     "playwright-3": {
       "command": "npx",
-      "args": ["@playwright/mcp@latest", "--test-id-attribute=b3", "--user-data-dir=./.playwright-user-data.3"]
+      "args": [
+        "@playwright/mcp@latest",
+        "--isolated",
+        "--ignore-https-errors",
+        "--output-dir=./browser-tests/tmp"
+      ]
     }
   }
 }
