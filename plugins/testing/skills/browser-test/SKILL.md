@@ -1,7 +1,7 @@
 ---
 name: browser-test
-description: "Orchestrate QA browser testing via Gherkin specs and Playwright."
-version: 2.0.0
+description: "Orchestrate QA browser testing via Gherkin specs and Playwright, with an optional fast Jev runner."
+version: 2.1.0
 ---
 
 # Browser Test — QA Testing with Gherkin Specs
@@ -9,6 +9,8 @@ version: 2.0.0
 You orchestrate a multi-phase QA browser testing workflow. You generate Gherkin specs from code changes, execute them against a running application via Playwright MCP tools, and produce a comprehensive test report.
 
 You perform all roles directly — spec generation, reporting, gap analysis — and use **subagents only for concurrent test execution** (up to 3 Playwright instances in parallel).
+
+When `.browser-tests.json` sets `"runner": "jev"`, execution starts with `scripts/jev-run.js`, a script that drives the browser with TypeSafe's Jev model instead of a Claude subagent. It is several times faster and uses no Claude tokens. Scenarios it can't settle fall back to the Claude subagents.
 
 ## Modes of operation
 
@@ -26,15 +28,24 @@ The operator is asking to run tests that already exist in the `.browser-tests.js
 
 Before proceeding, verify all of the following. If any check fails, stop immediately with the corresponding message.
 
-1. **Playwright MCP** — Verify that Playwright MCP tools are available by checking that tools prefixed with `mcp__playwright-1__`, `mcp__playwright-2__`, and `mcp__playwright-3__` exist. All three instances must be present.
+1. **Playwright MCP** — Find the three Playwright MCP instances and note the **full tool prefix of each one**. Don't assume the prefix: it depends on where the servers are configured.
+   - From the testing plugin's own `.mcp.json`, tools are named `mcp__plugin_testing_playwright-1__browser_navigate` and so on, so the prefix is `mcp__plugin_testing_playwright-1__`.
+   - From the project's `.mcp.json`, they are `mcp__playwright-1__browser_navigate`, so the prefix is `mcp__playwright-1__`.
+   - Other hosts may name them differently again.
 
-   > This skill requires 3 Playwright MCP server instances (playwright-1, playwright-2, playwright-3) configured in `.mcp.json`. Ensure the `@playwright/mcp` package is available and all three servers are running.
+   Look through the tools you have for names ending in `__browser_navigate`. If none are listed, they may be deferred: find them with ToolSearch (query `+playwright browser_navigate`, `max_results` 10). You need three distinct prefixes, one per instance. Record them in order; they become `{playwright tool prefix}` for the runner subagents.
+
+   > This skill requires 3 Playwright MCP server instances (playwright-1, playwright-2, playwright-3), which the testing plugin configures in its `.mcp.json`. Ensure the `@playwright/mcp` package is available and all three servers are running.
 
 2. **Bun** — Verify that `bun` is available by running `bun --version`.
 
    > This skill requires Bun to run the validation script. Install it from https://bun.sh before running `/browser-test`.
 
 3. **Agent tool** — Verify that the `Agent` tool is available (used for concurrent test execution and audit subagents).
+
+4. **Jev runner** (only when `runner` is `jev`) — Google Chrome must be installed, since `scripts/jev-run.js` drives it through `playwright-core`. A TypeSafe key must be available, either as `TYPESAFE_API_KEY` in the environment or through `jev.envFile`. The runner reports a missing key on its first invocation; stop there if it does.
+
+   > The Jev runner needs Google Chrome and a TypeSafe API key. Set `TYPESAFE_API_KEY`, or point `jev.envFile` in `.browser-tests.json` at a file that sets it.
 
 ---
 
@@ -67,7 +78,14 @@ Read `.browser-tests.json` from the repository root. If it does **not** exist, s
 
 After informing them of this, proceed to go through `references/setup.md` in order to get this file created.
 
-If it exists, load `directory`, `baseURL`, `furtherSetup`, and the optional `verificationTools` from it.
+If it exists, load `directory`, `baseURL`, `furtherSetup`, and the optional `verificationTools`, `runner`, and `jev` from it.
+
+`runner` (optional) is `"claude"` (the default) or `"jev"`. `jev` (optional) holds the Jev runner's knowledge of the app, which Claude runners get from reading `furtherSetup`:
+- `routes`: page names to paths, e.g. `{"Sign In": "/sessions/sign-in"}`.
+- `values`: labeled values steps may refer to, e.g. `{"password": "password", "free account email": "free@example.com"}`.
+- `envFile`: a file holding `TYPESAFE_API_KEY`, if it isn't in the environment.
+
+`references/setup.md` covers how to fill these in.
 
 If `furtherSetup` is set, read that file (it is a path relative to the repository root). This provides project-specific testing context (test credentials, seed data, application quirks) that should be substituted into the runner subagent prompt and referenced during spec generation.
 
@@ -157,7 +175,7 @@ Analyze the gathered context and generate Gherkin `.feature` files:
 
 ## Phase 2 — Test Execution
 
-Execute the spec files using concurrent subagents with Playwright MCP.
+Execute the spec files using concurrent subagents with Playwright MCP. When `runner` is `jev`, run the Jev pass first; only the scenarios it leaves over go to the subagents.
 
 ### Determine files to run
 
@@ -196,21 +214,50 @@ If a testdata command fails (non-zero exit), stop processing that feature file, 
 
 If no `testdata:` lines are present, proceed normally.
 
+### Jev pass (when `runner` is `jev`)
+
+Skip this section when `runner` is `claude` or unset.
+
+1. **Write the inputs.** Use the Write tool, not the shell.
+   - Once per run, when `jev.routes` is set, write `jev.routes` to `{directory}/tmp/jev/routes.json`.
+   - For each feature file, write `{directory}/tmp/jev/{feature-slug}.values.json`. It holds `jev.values` merged with the top-level keys of that feature's testdata JSON output. Where both define a key, the testdata output wins.
+2. **Run the Jev runner, one Bash call per feature file, up to 4 in parallel per message:**
+
+   ```bash
+   bun --env-file={jev.envFile} {absolute path to this skill}/scripts/jev-run.js {file path} --base-url {base URL} --values @{values file} --routes @{routes file} --artifacts {directory}/tmp/jev
+   ```
+
+   - When `jev.envFile` is unset, drop `--env-file=…`. The key then comes from `TYPESAFE_API_KEY` in the environment.
+   - When there are no routes, drop `--routes`.
+   - If the runner exits with `TYPESAFE_API_KEY is not set.`, stop. Tell the operator to export the key or set `jev.envFile`.
+3. **Sort each scenario in the JSON it prints** (`features[0].scenarios[]`):
+   - **Final:** `status` is `passed` and `escalate` is `false`. Record it with `runner: "jev"`.
+   - **Leftover:** everything else, meaning failed or `escalate: true`. Keep Jev's `failure_reason` as `jev_reason` for Phase 2b.
+
+   Jev's passes are trustworthy: when tested against a real app, every Jev pass that Claude re-checked got the same verdict from Claude. Its failures are not: about a third of the ones Claude re-checked were wrong. A failing step is often a spec that is ambiguous or out of date, and Claude can interpret that where Jev can't.
+4. **Run each feature's leftovers through the Claude runner below,** with `{scenarios}` set to the leftover scenario names.
+   - Run the feature's `testdata:` directives again first, so the Claude runner starts from fresh data rather than whatever the Jev pass changed.
+   - Features with no leftovers skip the Claude runner entirely.
+5. **Merge the results.** A Claude result replaces the Jev result for the same scenario and is recorded with `runner: "claude"`.
+   - Jev's own `difficulties` are tuning notes, not spec feedback. Leave them out of the report.
+   - Jev's decision log and failure screenshots stay under `{directory}/tmp/jev/`.
+
 ### Concurrent execution via subagents
 
-There are 3 Playwright MCP server instances available: `playwright-1`, `playwright-2`, and `playwright-3`. Execute feature files concurrently by spawning one `Agent` subagent per feature file.
+There are 3 Playwright MCP server instances available, whose tool prefixes you recorded in the Prerequisites. Execute feature files concurrently by spawning one `Agent` subagent per feature file.
 
 1. Batch the files into groups of up to 3
 2. For each batch, spawn up to 3 `Agent` subagents **concurrently** (in a single message with multiple tool calls)
-3. Assign each subagent a distinct Playwright instance: 1st → `playwright-1`, 2nd → `playwright-2`, 3rd → `playwright-3`
+3. Assign each subagent a distinct instance: the 1st, 2nd, and 3rd tool prefix you recorded
 4. For each subagent: read `references/runner-prompt.md` and substitute the template variables:
    - `{base URL}` — from configuration
    - `{file path}` — the feature file to execute
    - `{directory}` — the `directory` from configuration, so the runner writes its scratch files to the gitignored `{directory}/tmp/`
-   - `{playwright instance}` — the assigned instance name
+   - `{playwright tool prefix}` — the assigned instance's full tool prefix, including the trailing `__` (e.g. `mcp__plugin_testing_playwright-1__`)
    - `{further setup}` — the furtherSetup content (or empty if not set)
    - `{testdata context}` — if this file had `testdata:` directives, include the resolved data (IDs, credentials, etc.) as a "TEST DATA" block the runner can reference when interpreting steps. If no `testdata:` directives were present, substitute with empty string.
    - `{verification tools}` — the `verificationTools` list from configuration, formatted as a bullet per tool. If unset or empty, substitute with empty string.
+   - `{scenarios}` — in a Jev run, the leftover scenario names from that file, one bullet each. Otherwise, substitute with an empty string, which runs every scenario.
 5. Wait for all subagents in the batch to complete before starting the next batch
 6. Collect JSON results from all subagents
 
@@ -224,8 +271,10 @@ After all subagents complete, assemble combined results:
    { "total": 15, "passed": 12, "failed": 2, "skipped": 1 }
    ```
 3. Combine all difficulties into a single array, adding `feature_file` to each entry
+4. Combine all `interpretations` from Claude runners into a single array, adding `feature_file` to each entry
+5. In a Jev run, add `settled_by` to the summary, e.g. `{ "jev": 18, "claude": 6 }`. Also add the Jev cost, which is the sum of each runner's `jev.cost_usd`.
 
-If there are **any failures**, proceed to Phase 2b. Otherwise skip to Phase 3.
+If there are **any failures**, or any `interpretations` or Jev leftovers to clarify, proceed to Phase 2b. Otherwise skip to Phase 3.
 
 ---
 
@@ -252,13 +301,40 @@ For each **POSSIBLE BUG**:
 
 For **ENVIRONMENT ISSUES**: Note them but take no action.
 
+### Clarify specs for the Jev runner
+
+Do this on every run, whichever runner ran. Claude runs clarified specs the same way, and Jev can then settle them without falling back to Claude.
+
+Look at every scenario that either:
+- reported `interpretations` (Claude had to decide what the spec meant), or
+- was a Jev leftover whose `jev_reason` points at the spec rather than the app, such as `BLOCKED` on a vague step, a value it had no candidate for, or a repeated action.
+
+For each one, make explicit in the `.feature` file what the runner had to work out:
+- **Values:** replace a described value with the concrete, quoted value the runner used.
+  - `with valid credentials` becomes separate steps with the quoted email and password of the seeded account from `furtherSetup`.
+  - For an input meant to be invalid, quote an invalid value, e.g. `"nobody@example.com"` and `"wrong-password"`.
+- **Elements:** name them by their current accessible name, quoted. `When I click the search box` becomes `When I click the "Search the v7 Icons" field`.
+  - If the element no longer exists (the UI changed), that is a STALE SPEC, not a clarification.
+- **Compound steps:** split them so each step is one action. `Given I am on the "Sign In" page and enter invalid credentials` becomes two or more steps.
+- **Deep links:** quote the path for a page with no obvious name, e.g. `Given I am on the "/search?q=coffee" page`.
+- **Implicit submits:** make them explicit. When a field only takes effect on submit, add `And I press the "Enter" key` after filling it.
+- **Phrasing:** use the phrasings the Jev runner checks in code when they mean the same thing: `I should see "X"`, `I should not see "X"`, `the URL should contain "X"`, `the page title should be "X"`, `I wait for N seconds`, `I scroll to the "X" section`.
+
+A clarification must not change what the scenario tests:
+- No removed or loosened assertions.
+- No accounts or data other than what the runner actually used.
+- No new expectations.
+
+Record each clarification the same way as a repair, labeled `clarification`.
+
 ### Independent audit
 
-After completing all repairs, spawn a single `Agent` subagent to audit your changes. Read `references/auditor-prompt.md` and substitute the `{repairs}` template variable with the list of repairs you made. For each repair, include:
+After completing all repairs and clarifications, spawn a single `Agent` subagent to audit your changes. Read `references/auditor-prompt.md` and substitute the `{repairs}` template variable with the list of changes you made. For each change, include:
 - The spec file path (original location)
 - The scenario name
+- Whether it is a `repair` or a `clarification`
 - What you changed and why
-- The source code evidence you cited
+- The source code evidence you cited, or for a clarification, the runner interpretation or Jev reason it came from
 
 Wait for the auditor's JSON findings before proceeding.
 
@@ -291,9 +367,10 @@ After receiving audit findings:
    - For accepted repairs: Files are already updated
    - For rejected repairs (keep original): Revert the spec file to its original content
    - Re-run ONLY the repaired spec files through Phase 2 to verify the fixes work
+   - In a Jev run, re-run files that were only clarified through the Jev runner alone, with no Claude fallback: Claude already gave their verdicts this run. Report how many of their scenarios Jev now settles.
    - After the re-run, proceed to Phase 3
 
-If there were **no suspected bugs** from either the repair analysis or the auditor and all repairs were legitimate, re-run the repaired specs through Phase 2, then proceed to Phase 3.
+If there were **no suspected bugs** from either the repair analysis or the auditor and all repairs were legitimate, re-run the repaired specs through Phase 2 (and clarified-only files through the Jev runner alone, as above), then proceed to Phase 3.
 
 ---
 
@@ -354,6 +431,9 @@ After all phases complete, present the final summary to the operator:
 - **Failed**: {failed} ❌
 - **Skipped**: {skipped} ⏭️
 - **Pass Rate**: {percentage}%
+{In a Jev run, add:}
+- **Settled by Jev**: {n} · **Re-run by Claude**: {m} · **Jev cost**: ${cost}
+- **Clarified for Jev**: {k} scenarios, of which Jev now settles {j}
 
 ### Files
 - Specs: `{directory}/specs/` ({N} feature files across {M} categories)

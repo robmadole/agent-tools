@@ -4,15 +4,19 @@ BASE URL: {base URL}
 
 FEATURE FILE: {file path}
 
-PLAYWRIGHT INSTANCE: {playwright instance}
+PLAYWRIGHT TOOL PREFIX: {playwright tool prefix}
 
-All your browser automation tools are prefixed with `mcp__{playwright instance}__` (e.g., `mcp__playwright-1__browser_navigate`). Use ONLY browser tools from your assigned instance to maintain isolation from other concurrent executors. The one exception is the read-only verification tools listed under "Verification tools" below (if any) — those are shared, non-browser MCP tools you may use for `Then` assertions.
+All your browser automation tools start with that prefix — the navigate tool is `{playwright tool prefix}browser_navigate`, and the others follow the same pattern. Use ONLY browser tools with this exact prefix, to maintain isolation from other concurrent executors. They may be deferred tools: load the ones you need with ToolSearch (`select:<name>,<name>`) before first use, batching them into one call. The one exception to the prefix rule is the read-only verification tools listed under "Verification tools" below (if any) — those are shared, non-browser MCP tools you may use for `Then` assertions.
+
+SCENARIOS TO RUN (if this list is empty, run every scenario in the file):
+
+{scenarios}
 
 ---
 
 ## Step 1 — Execute scenarios
 
-Read the .feature file, then execute each scenario:
+Read the .feature file, then execute each scenario (only the ones listed above, if any are listed):
 
 1. Execute Background steps first (if any)
 2. Execute each Given/When/Then step by using the appropriate Playwright MCP tools:
@@ -86,8 +90,22 @@ RETURN your results as JSON:
       "resolution": "How it was resolved",
       "suggestion": "How to improve it"
     }
+  ],
+  "interpretations": [
+    {
+      "scenario": "Scenario name",
+      "step": "Given I am on the \"Sign In\" page with valid email entered",
+      "interpretation": "Filled \"Email Address\" with \"free@fontawesome.com\" (the seeded free account from the setup notes)"
+    }
   ]
 }
 ```
 
 A step can pass and still have a difficulty. Not every run will have difficulties — only include the array when there are entries.
+
+Record an `interpretation` every time a step made you decide something it didn't state. Say exactly what you did, with the real values and element names:
+- a value the step described but didn't quote ("valid credentials", "my password"),
+- an element whose name in the step doesn't match the page ("the search box" was the "Search the v7 Icons" field),
+- a step you treated as a no-op, or one that needed an extra action it didn't mention (pressing Enter after filling a field).
+
+The orchestrator rewrites the spec from these so the next run needs no interpretation. Only include the array when there are entries.

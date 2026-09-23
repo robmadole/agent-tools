@@ -98,6 +98,30 @@ Think about what each scenario **actually needs**:
 
 Use these standard step patterns for consistency across specs.
 
+### Quote every value
+
+Put every value a step types, selects, or looks for in double quotes: field values, option labels, element names, and expected text. A runner should never have to make up a value or guess what counts as a match.
+
+- **Inputs:** `When I fill in "Email Address" with "nobody@example.com"`, not `When I enter invalid credentials`.
+- **Expected text:** `Then I should see "That was an invalid email or password"`, not `Then I should see an error message indicating invalid credentials`.
+- **Deep links:** quote the path when the page has no obvious name: `Given I am on the "/search?q=coffee" page`.
+
+The one exception is a value that comes from `testdata:` output. Refer to it by its role, e.g. `with the admin manager email`, and the runner resolves it from the test data block.
+
+### Write specs the Jev runner can settle
+
+A project can run specs with the Jev runner, a fast model that picks from what's on the page and never has to interpret a step. Specs written this way cost Claude runners nothing and let Jev finish them without falling back to Claude:
+
+- **One action per step.** Put the submit in its own step: `And I press the "Enter" key` or `And I click the "Sign In" button`.
+- **Name the account.** Use `Given I am signed in as "free@example.com" with password "password"`, not `Given I am signed in as a free user`.
+- **Use current element names.** Use the element's accessible name as the page shows it, quoted.
+- **Prefer these exact phrasings.** Jev checks them in code, with no judgment involved:
+  - `I should see "X"` and `I should not see "X"`
+  - `the URL should contain "X"` and `the page title should be "X"`
+  - `I wait for N seconds`, `I scroll to the "X" section`
+- **Assert what's on the page.** Say what the page shows (`Then I should see "Signing In…"`), not how it looks (`the button should show a loading state`).
+  - Expectations about colors, layout, HTML attributes, or a state that only lasts while a request is in flight always go to a Claude runner. Write them only when that's really what's being tested.
+
 ### Navigation (Given)
 
 ```gherkin
@@ -174,6 +198,10 @@ Good: `When I click the "Submit" button`
 ### Multiple actions in one step
 Bad: `When I fill in the form and click submit`
 Good: Two separate steps — one for filling, one for clicking
+
+### Unquoted values
+Bad: `Given I am on the "Sign In" page and enter invalid credentials`
+Good: `When I fill in "Email Address" with "nobody@example.com"` then `And I fill in "Password" with "wrong-password"`
 
 ### Missing Given context
 Bad: Starting a scenario with `When I click "Delete"`

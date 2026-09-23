@@ -20,6 +20,9 @@ Determine the run number by checking existing files in `{directory}/results/` �
 | Failed | {failed} |
 | Skipped | {skipped} |
 | Pass Rate | {percentage}% |
+| Settled by Jev | {n} (Jev runs only) |
+| Re-run by Claude | {m} (Jev runs only) |
+| Jev cost | ${cost} (Jev runs only) |
 
 ---
 
@@ -30,11 +33,13 @@ Determine the run number by checking existing files in `{directory}/results/` �
 #### {Feature Name}
 **File**: `{file path}`
 
-| Scenario | Status |
-|----------|--------|
-| {name} | ✅ Pass |
-| {name} | ❌ Fail |
-| {name} | ⏭️ Skip |
+| Scenario | Status | Runner |
+|----------|--------|--------|
+| {name} | ✅ Pass | Jev |
+| {name} | ❌ Fail | Claude |
+| {name} | ⏭️ Skip | Claude |
+
+Drop the Runner column, and the three Jev rows in the summary, when `runner` is `claude`.
 
 ### Failed Scenarios
 
@@ -58,6 +63,16 @@ Determine the run number by checking existing files in `{directory}/results/` �
 | `{file}` | {scenario} | `{step}` | {difficulty} | {suggestion} |
 
 {Omit this section entirely if no difficulties were reported.}
+
+### Clarifications
+
+{Include this section only if Phase 2b clarified any specs. One row per clarified step.}
+
+| Spec File | Scenario | Before | After | Why |
+|-----------|----------|--------|-------|-----|
+| `{file}` | {scenario} | `{old step}` | `{new step(s)}` | {runner interpretation or Jev reason} |
+
+{In a Jev run, finish with: "Jev now settles {j} of the {k} clarified scenarios."}
 
 ### Recommendations
 

@@ -1,0 +1,43 @@
+<!doctype html>
+<title>Sign In</title>
+<main id="signin">
+  <h1>Sign in</h1>
+  <form>
+    <label>Email <input type="email" name="email"></label>
+    <label>Password <input type="password" name="password"></label>
+    <button>Sign in</button>
+  </form>
+  <p id="error" role="alert" hidden>Invalid email or password</p>
+</main>
+<main id="dashboard" hidden>
+  <h1>Dashboard</h1>
+  <p id="welcome"></p>
+  <form>
+    <label>Plan <select name="plan"><option>Free</option><option>Pro</option></select></label>
+    <label><input type="checkbox" name="agree"> Agree to terms</label>
+    <button>Save</button>
+  </form>
+  <p id="saved" role="status"></p>
+</main>
+<script>
+  const [signin, dashboard] = document.querySelectorAll("main");
+  signin.querySelector("form").onsubmit = (e) => {
+    e.preventDefault();
+    const { email, password } = e.target.elements;
+    if (email.value !== "user@example.com" || password.value !== "password") {
+      document.getElementById("error").hidden = false;
+      return;
+    }
+    signin.hidden = true;
+    dashboard.hidden = false;
+    document.title = "Dashboard";
+    document.getElementById("welcome").textContent = `Welcome back, ${email.value}`;
+  };
+  dashboard.querySelector("form").onsubmit = (e) => {
+    e.preventDefault();
+    const { plan, agree } = e.target.elements;
+    document.getElementById("saved").textContent = agree.checked
+      ? `Settings saved: ${plan.value}`
+      : "You must agree to the terms";
+  };
+</script>

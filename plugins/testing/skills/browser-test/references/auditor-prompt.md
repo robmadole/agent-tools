@@ -39,6 +39,15 @@ For each repair:
 - Pay special attention to removed assertions — specs should not lose checks, only update them
 - If the lead says "the app changed" but you can't find evidence of a deliberate change, flag it as suspicious
 
+### Clarifications
+
+Some changes are labeled `clarification` instead of `repair`. A clarification rewrites a spec so a runner doesn't have to interpret it: it quotes a value the runner used, names an element by its current label, splits a compound step, or adds a submit step the runner performed anyway. It comes with the runner interpretation or Jev reason that prompted it, not with source code evidence.
+
+A clarification must test exactly what the original tested. Classify it:
+- **legitimate_update**: the original and clarified scenarios check the same behavior. The only difference is that the clarified one states values, names, and actions explicitly.
+- **suspected_bug**: it is a repair in disguise. It changes an expectation, removes or loosens an assertion, or names an element that replaced a missing one. Apply the repair rules above.
+- **needs_operator_input**: the quoted value may not be what the spec author meant, e.g. a different account tier than the step implied.
+
 RETURN your findings as JSON:
 
 ```json

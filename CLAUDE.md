@@ -16,7 +16,7 @@ The manifest schema follows `https://anthropic.com/claude-code/marketplace.schem
 ## Plugins & Skills
 
 - **`testing`** — Testing tools for developing software.
-  - `browser-test` — Orchestrate QA browser testing via Gherkin specs and Playwright.
+  - `browser-test` — Orchestrate QA browser testing via Gherkin specs and Playwright. With `"runner": "jev"`, `scripts/jev-run.js` runs specs first with TypeSafe's Jev model and only its leftovers go to Claude subagents.
   - `bug-hunter` — Time/count-boxed bug hunt against a feature branch, combining code reading with live browser verification, ending in a scored report.
   - `jit-catch` — Generate catching tests for Elixir code changes to check a diff for bugs.
 - **`develop`** — Tools for writing code during development.
