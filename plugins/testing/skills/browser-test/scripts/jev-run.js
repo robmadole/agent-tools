@@ -20,10 +20,23 @@ import path from "path";
 import { parseArgs } from "util";
 import { AstBuilder, GherkinClassicTokenMatcher, Parser, compile } from "@cucumber/gherkin";
 import { chromium } from "playwright-core";
+import { Database } from "bun:sqlite";
+import { pickleName, recordStep } from "./report.js";
+import { CODE_STEPS, LITERAL_CHECKS, matchFirst } from "./checks.js";
 
 // ponytail: placeholder thresholds; decisions.jsonl keeps every probability so they can be re-tuned offline.
 const MAX_ACTIONS = 10;
 const LOW_CONFIDENCE = 0.5;
+// DONE gets its own, higher bar. Measured over two runs of the same app, 142 DONE decisions once literal
+// assertions stopped reaching Jev: a low cluster at 0.46-0.59 and a legitimate cluster from 0.75 up, with nothing
+// in between. 0.7 sits in that gap. It is deliberately NOT tuned to just clear the bad scores — the same step
+// scored 0.46 on one run and 0.59 on the next, so a threshold hugging 0.6 would miss it on a third.
+//
+// Confidence alone cannot tell a real early DONE from a cautious good one: on one run a genuine false pass and a
+// perfectly good DONE both came back at 0.59. So this over-escalates on purpose. The trade is asymmetric — a false
+// alarm costs one scenario re-run by Claude, while a miss is a test that reports green without doing its work.
+// ponytail: escalating covers it; a next-step signal could separate the two cases if the re-runs get expensive.
+const DONE_TRUSTED = 0.7;
 const PASS = 0.8;
 const FAIL = 0.2;
 // A Given step's DONE is checked by a Noul whose recorded scores split at 0.5: redirects to the same page scored
@@ -124,11 +137,14 @@ const { values: opts, positionals: files } = parseArgs({
     artifacts: { type: "string" },
     jobs: { type: "string", default: "4" },
     headed: { type: "boolean" },
+    "report-run": { type: "string" },
+    "report-id": { type: "string", default: "1" },
+    "report-shots": { type: "boolean" },
   },
 });
 if (!files.length || !opts["base-url"]) {
   console.error("Usage: bun jev-run.js <a.feature ...> --base-url <url> [--values <json|@file>] [--routes <json|@file>] " +
-    "[--artifacts <dir>] [--jobs 4] [--headed]");
+    "[--artifacts <dir>] [--jobs 4] [--headed] [--report-run <dir> [--report-id <id>] [--report-shots]]");
   process.exit(2);
 }
 if (!process.env.TYPESAFE_API_KEY) {
@@ -148,6 +164,16 @@ const OUT = fs.mkdtempSync(path.join(opts.artifacts ?? os.tmpdir(), "jev-"));
 const log = fs.createWriteStream(path.join(OUT, "decisions.jsonl"));
 const usage = { requests: 0, input_tokens: 0, latency_ms: 0 };
 const newId = () => crypto.randomUUID();
+
+// The same recorder the Claude runner drives through the CLI, called in-process here: the PNG is
+// already a Buffer, so a Jev step costs one insert and never touches a temp file.
+const REPORT = opts["report-run"]
+  ? (() => {
+      const db = new Database(path.join(opts["report-run"], "run.db"));
+      db.exec("PRAGMA busy_timeout = 10000");
+      return db;
+    })()
+  : null;
 
 async function jev(state, questions, meter) {
   for (let attempt = 0; ; attempt++) {
@@ -460,6 +486,14 @@ async function actionStep(page, run, i) {
       if (id !== "operation" && confidence < LOW_CONFIDENCE) run.risky = true;
     }
     if (headId && heads[headId].truncated) run.flag(i, `${headId} had more than ${MAX_OPTIONS} candidates; extras were dropped`);
+    // The one operation where a split is not harmless: GOTO vs CLICK is two ways to do the step, but an uncertain
+    // DONE claims the work is already finished, and nothing downstream catches it when the next assertion holds
+    // either way — "I select Large from the Size dropdown" stopped after opening the combobox, and the Then only
+    // checked the dialog was still open. A Context DONE has the step_holds check below; an Action DONE had nothing.
+    if (op === "DONE" && run.steps[i].type !== "Context" && answers.operation.confidence < DONE_TRUSTED) {
+      run.flag(i, `Low DONE confidence ${answers.operation.confidence.toFixed(2)}; escalated to Claude`);
+      run.risky = true;
+    }
     if (op === "DONE" && run.steps[i].type === "Context") {
       const holds = answers.step_holds?.noul ?? 0;
       if (holds > STEP_PASS) return {};
@@ -489,40 +523,6 @@ async function actionStep(page, run, i) {
 
 // Then: one Noul, re-observed until it passes or the timeout leaves a verdict.
 // An unchanged snapshot is the same state, so it reuses the last answer instead of asking again.
-const fold = (s) => s.toLowerCase().replace(/\s+/g, " ");
-const decode = (u) => {
-  try {
-    return decodeURIComponent(u);
-  } catch {
-    return u;
-  }
-};
-
-// Exact lookups stay in code instead of going to Jev. Each says whether the expectation holds right now and how to
-// describe a miss. Text is case- and whitespace-folded, since CSS text-transform changes innerText.
-const LITERAL_CHECKS = [
-  [/^I should (not )?see "([^"]+)"$/i, (m, obs) => {
-    const seen = fold(obs.text).includes(fold(m[2]));
-    return { ok: seen !== Boolean(m[1]), miss: `"${m[2]}" is ${seen ? "" : "not "}on the page` };
-  }],
-  [/^the URL should (not )?contain "([^"]+)"$/i, (m, obs) => {
-    const has = obs.url.includes(m[2]) || decode(obs.url).includes(m[2]);
-    return { ok: has !== Boolean(m[1]), miss: `the URL ${obs.url} ${has ? "contains" : "does not contain"} "${m[2]}"` };
-  }],
-  [/^the page title should be "([^"]+)"$/i, (m, obs) => ({ ok: obs.title === m[1], miss: `the page title is "${obs.title}"` })],
-];
-
-// Known phrasings that need no judgment; code runs them directly.
-const CODE_STEPS = [
-  // ponytail: a fixed sleep becomes "wait up to N seconds for the network to settle"; the action loop and assertion
-  // polling already wait for state.
-  [/^I wait for (\d+(?:\.\d+)?) seconds?$/i, (page, m) => page.waitForLoadState("networkidle", { timeout: m[1] * 1000 }).catch(() => {})],
-  [/^I scroll to the "([^"]+)" section$/i, (page, m) => page.getByText(m[1]).first().scrollIntoViewIfNeeded({ timeout: 5000 })],
-  [/^I resize the browser to (?:a )?mobile viewport$/i, (page) => page.setViewportSize({ width: 390, height: 844 })],
-];
-
-const matchFirst = (table, raw) => table.map(([re, fn]) => [raw.match(re), fn]).find(([m]) => m);
-
 async function outcomeStep(page, run, i) {
   const deadline = Date.now() + ASSERT_TIMEOUT_MS;
   const literal = matchFirst(LITERAL_CHECKS, run.steps[i].raw);
@@ -557,9 +557,10 @@ async function outcomeStep(page, run, i) {
   }
 }
 
-async function runScenario(browser, pickle, name, keywords, testValues, meter) {
+async function runScenario(browser, file, pickle, name, keywords, testValues, meter) {
   const run = {
     name,
+    file,
     testValues,
     meter,
     generated: generatedValues(),
@@ -584,10 +585,15 @@ async function runScenario(browser, pickle, name, keywords, testValues, meter) {
       continue;
     }
     const code = matchFirst(CODE_STEPS, run.steps[i].raw);
+    // Gherkin gives an `And` the type of the keyword above it, so `When I click "X" / And I should see "Y"` makes
+    // the assertion an Action step, and actionStep asks Jev for an operation instead of checking anything — it
+    // answers BLOCKED on a satisfied assertion, or DONE without looking. A step code can settle exactly is an
+    // assertion whatever its type says, so route on the phrasing rather than the keyword above it.
+    const literal = matchFirst(LITERAL_CHECKS, run.steps[i].raw);
     let outcome;
     try {
       const work = code ? Promise.resolve(code[1](page, code[0])).then(() => ({}))
-        : run.steps[i].type === "Outcome" ? outcomeStep(page, run, i)
+        : literal || run.steps[i].type === "Outcome" ? outcomeStep(page, run, i)
         : actionStep(page, run, i);
       outcome = await within(Math.max(deadline - Date.now(), 1), work, "scenario");
     } catch (e) {
@@ -599,6 +605,15 @@ async function runScenario(browser, pickle, name, keywords, testValues, meter) {
       await page.screenshot({ path: path.join(OUT, `${name.replace(/\W+/g, "-")}.png`), timeout: 5000 }).catch(() => {});
     }
     result.steps.push({ step, status: outcome.fail ? "failed" : "passed" });
+    if (REPORT) {
+      const png = opts["report-shots"]
+        ? await page.screenshot({ type: "png", timeout: 5000 }).catch(() => null)
+        : null;
+      recordStep(REPORT, {
+        runId: opts["report-id"], runner: "jev", feature: run.file, scenario: name,
+        step, status: outcome.fail ? "failed" : "passed", reason: outcome.fail ?? null, screenshot: png,
+      });
+    }
   }
   if (failure) Object.assign(result, { status: "failed", failure_reason: failure.reason, failed_step: failure.step });
   result.escalate ||= Boolean(run.risky);
@@ -624,11 +639,9 @@ async function runFeature(browser, file) {
   collect(doc.feature?.children);
   const rows = {};
   for (const pickle of compile(doc, file, newId)) {
-    // Scenario Outline rows share a name; astNodeIds is [scenario, examples row].
-    const [scenarioId, rowId] = pickle.astNodeIds;
-    rows[scenarioId] = (rows[scenarioId] ?? 0) + 1;
-    const name = rowId ? `${pickle.name} (example ${rows[scenarioId]})` : pickle.name;
-    const { result, difficulties } = await runScenario(browser, pickle, name, keywords, VALUES, meter);
+    // Named through report.js so a Jev record lands on the manifest row `report init` wrote for it.
+    const name = pickleName(pickle, rows);
+    const { result, difficulties } = await runScenario(browser, file, pickle, name, keywords, VALUES, meter);
     out.scenarios.push(result);
     out.difficulties.push(...difficulties);
   }
@@ -650,9 +663,14 @@ await Promise.all(Array.from({ length: Math.min(Number(opts.jobs), files.length)
 }));
 await browser.close();
 log.end();
-console.log(JSON.stringify({
+REPORT?.close();
+const output = JSON.stringify({
   features,
   elapsed_ms: Math.round(performance.now() - started),
   jev: { ...usage, cost_usd: (usage.input_tokens * 0.042) / 1e6 },
   artifacts: OUT,
-}, null, 2));
+}, null, 2);
+// Also on disk: stdout only survives in the orchestrator's transcript, which is no use when someone
+// wants to see what the runner actually returned after the run.
+fs.writeFileSync(path.join(OUT, "result.json"), output);
+console.log(output);

@@ -18,6 +18,13 @@ Ask the operator for the following:
 
 **Runner** (optional, default: `claude`): `claude` runs every scenario with a Claude subagent driving Playwright MCP. `jev` runs every scenario first with `scripts/jev-run.js`, which uses TypeSafe's Jev model. That's several times faster and uses no Claude tokens. Only the scenarios Jev can't settle go to Claude subagents. `jev` needs Google Chrome and a TypeSafe API key.
 
+**Reports** (optional): which reports each run produces — `["markdown"]`, `["visual"]`, or both. Leave the key out and the operator is asked at the start of every run.
+
+- `markdown` — the familiar `{directory}/results/*.md` report.
+- `visual` — one self-contained HTML page per run: a screenshot of every step, laid out as a filmstrip per scenario, with failures marked and un-run steps drawn as empty frames. Click any frame for the full-resolution image. Everything is embedded, so the file travels on its own.
+
+`visual` costs a screenshot and a record call on every step. Under the Jev runner that is a few milliseconds and no tokens; under the Claude runner it is two extra tool calls per step. A run of ~120 steps produces a 15-20MB HTML file, which `gzip -9` cuts by about a quarter.
+
 ### 3. Write `.browser-tests.json`
 
 Create the configuration file at the repository root:
@@ -27,6 +34,7 @@ Create the configuration file at the repository root:
   "directory": "<directory>",
   "baseURL": "<base URL>",
   "furtherSetup": "<directory>/setup.md",
+  "reports": ["markdown", "visual"],
   "runner": "jev",
   "jev": {
     "routes": { "Sign In": "/sessions/sign-in", "Search": "/search" },
@@ -36,7 +44,7 @@ Create the configuration file at the repository root:
 }
 ```
 
-Leave out `runner` and `jev` for the Claude runner.
+Leave out `runner` and `jev` for the Claude runner, and `reports` to be asked each run.
 
 The `furtherSetup` property is a path (relative to the repository root) to a file that documents project-specific testing context — things like test user credentials, seed data, special application states, or anything else that helps execute tests effectively.
 

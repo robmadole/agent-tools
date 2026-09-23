@@ -157,6 +157,8 @@ Then I should not see "Error"
 Then the "Email" field should contain "user@example.com"
 Then the "Submit" button should be disabled
 Then the "Submit" button should be enabled
+Then the "Subscribe" checkbox should be checked
+Then the "Subscribe" checkbox should be unchecked
 Then I should be on the "Dashboard" page
 Then the URL should contain "/dashboard"
 Then I should see 5 "reservation" items

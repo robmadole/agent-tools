@@ -28,6 +28,8 @@ Read the .feature file, then execute each scenario (only the ones listed above, 
 3. For "Then" assertions: examine the page state and determine pass/fail
 4. Record the result: pass, fail (with reason), or skip (if a prior step failed)
 5. If a step fails, mark remaining steps in that scenario as "skipped" and move to the next scenario
+6. **Record every step you run** with the command in "Recording steps" below, immediately after
+   you run it — not batched up at the end of the scenario
 
 GUIDELINES:
 - For "I am signed in as X" steps: navigate to sign-in page, fill credentials, submit, verify redirect
@@ -35,6 +37,46 @@ GUIDELINES:
 - Retry once if the page seems to still be loading
 - Save any temporary files (screenshots, test fixtures) to `{directory}/tmp/` — never anywhere else in the project. Pass it as the `filename` argument (e.g. `{directory}/tmp/signin-error.png`); that directory is gitignored, so nothing you write there pollutes the repo. Do NOT use an absolute `/tmp/...` path — the Playwright MCP server rejects paths outside the project roots with "File access denied"
 - Steps may use generic references like "the admin manager email", "the guest email", "the admin manager", etc. Resolve these from the TEST DATA block below — it contains the actual values (emails, passwords, IDs) created for this test run. If a step says to fill in a field "with the X email", look up that entity's email from the test data. If a step says "signed in as the X", use that entity's credentials.
+
+## Recording steps
+
+Every step you run gets recorded. This is not optional and it is not bookkeeping you can
+reconstruct afterwards — the report is assembled from these records, and a scenario only counts as
+passing when **every** step in the spec has a record. A scenario you ran successfully but stopped
+recording partway through is reported as `incomplete`, not as a pass.
+
+Immediately after each step, run exactly one Bash call:
+
+```bash
+{report command} --scenario 'Sign in with valid credentials' --step 'When I fill "Email" with "free@example.com"' --status passed
+```
+
+**Single-quote `--scenario`, `--step` and `--reason`.** Gherkin steps contain double quotes almost
+every time, so wrapping them in double quotes breaks the command. If a value contains an
+apostrophe, use double quotes and backslash-escape the inner double quotes instead:
+
+```bash
+{report command} --scenario "Owner's dashboard" --step "Then I should see \"Welcome\"" --status passed
+```
+
+Rules:
+
+- `--status` is `passed` or `failed`. Nothing else.
+- On a failure, add `--reason '<what went wrong>'`, and record the failing step itself.
+- **Do not record skipped steps.** Steps after a failure need no record at all — the report draws
+  them as empty frames automatically.
+- `--step` is the literal line from the .feature file, keyword included
+  (`Given I am on the "Sign In" page`), not your paraphrase of it.
+- **Record `Background` steps too, once per scenario.** Background runs fresh for every scenario, so
+  every scenario's records start with its Background steps. Leaving them out makes a scenario that
+  actually passed report as `incomplete`.
+- `--scenario` is the scenario's name exactly as the .feature file spells it. For a
+  `Scenario Outline`, the rows are named `<scenario name> (example 1)`, `(example 2)`, and so on,
+  in the order the Examples table lists them.
+- One `record` per Bash call. Never chain them with `&&`, never loop, never batch several steps
+  into one call. The operator allowlists this by its verb; chaining defeats that.
+
+{screenshot instructions}
 
 {further setup}
 

@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Browser Test Report</title>
+<style>
+  :root {
+    --bg: #0D1117; --surface: #161B22; --surface2: #1B2231; --border: #2A3140;
+    --tp: #E6EDF3; --ts: #8B98A9; --tm: #5E6B7C;
+    --passed: #3FB950; --failed: #F85149; --incomplete: #D29922; --not_run: #5E6B7C;
+    --jev: #A371F7; --claude: #E08C4F;
+    --mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, monospace;
+    --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  /* An <svg hidden> is a foreign element and doesn't reliably pick up the UA [hidden] rule, so the
+     icon sprite lays out as a 300x150 blank block above the header without this. */
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--tp); font: 14px/1.5 var(--sans); }
+  .wrap { max-width: 1280px; margin: 0 auto; }
+
+  header { display: flex; justify-content: space-between; align-items: center; gap: 24px;
+           flex-wrap: wrap; padding: 30px 36px; border-bottom: 1px solid var(--border); }
+  h1 { margin: 0 0 7px; font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
+  .meta { font: 12px var(--mono); color: var(--tm); }
+  .rate { display: flex; align-items: center; gap: 16px; }
+  .donut { width: 72px; height: 72px; border-radius: 50%; flex: none;
+           background: conic-gradient(var(--dial) calc(var(--pct) * 1%), var(--border) 0);
+           mask: radial-gradient(circle, transparent 28px, #000 29px); }
+  .rate b { display: block; font-size: 30px; font-weight: 700; line-height: 1.1; }
+  .rate span { font-size: 12px; color: var(--ts); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; padding: 18px 36px;
+           border-bottom: 1px solid var(--border); }
+  .chip { display: inline-flex; align-items: center; gap: 8px; padding: 8px 15px; font-size: 12.5px;
+          background: var(--surface); border: 1px solid var(--border); border-radius: 40px; }
+  .chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--tm)); }
+
+  .banner { margin: 22px 36px -4px; padding: 16px 18px; border-radius: 9px; font-size: 13px;
+            background: #2A1F0C; border: 1px solid #5C4410; color: #EFCE7B; }
+  .banner.cluster { background: #2B1517; border-color: #5C2327; color: #F0A6A3; }
+  .banner b { color: inherit; }
+  .banner ul { margin: 9px 0 0; padding-left: 20px; line-height: 1.7; }
+
+  section.feature { padding: 34px 36px 0; }
+  .fhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px;
+           margin-bottom: 14px; }
+  .fhead h2 { margin: 0 0 4px; font-size: 15.5px; font-weight: 600; color: var(--tp); }
+  .fhead .file { font: 11px var(--mono); color: var(--tm); word-break: break-all; }
+  .fhead .count { flex: none; padding: 5px 12px; border-radius: 40px; font: 11.5px var(--mono);
+                  background: var(--surface); border: 1px solid var(--border); }
+  /* The left rule ties the seeded data to the feature above it; without it these lines read as
+     loose grey text at the same weight as the file path. */
+  .testdata { margin: 0 0 18px; padding: 0 0 0 13px; border-left: 2px solid var(--border);
+              font: 11.5px/1.9 var(--mono); color: var(--tm); }
+  .testdata li { list-style: none; display: flex; align-items: center; gap: 8px; }
+  .testdata .k { color: var(--ts); opacity: 0.75; }
+
+  .i { width: 1em; height: 1em; fill: currentColor; flex: none; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+          padding: 20px; margin-bottom: 16px; }
+  .card.failed { border-color: #5C2327; }
+  .card.incomplete { border-color: #5C4410; }
+  .chead { display: flex; justify-content: space-between; align-items: center; gap: 16px;
+           flex-wrap: wrap; margin-bottom: 17px; }
+  .chead .left { display: flex; align-items: center; gap: 9px; min-width: 0; }
+  .chead h3 { margin: 0; font-size: 15px; font-weight: 600; }
+  .chead .verdict-icon { width: 17px; height: 17px; color: var(--v); }
+  .badge { padding: 4px 9px; border-radius: 5px; font: 10.5px var(--mono); white-space: nowrap; }
+  .badge.jev { background: #291E44; color: var(--jev); }
+  .badge.claude { background: #3B2818; color: var(--claude); }
+  .badge.verdict { background: color-mix(in srgb, var(--v) 16%, transparent); color: var(--v); }
+  .dur { font: 11.5px var(--mono); color: var(--tm); }
+
+  .strip { display: flex; flex-wrap: wrap; gap: 14px; }
+  figure.step { margin: 0; width: 210px; }
+  figure.step img, figure.step .ghost { width: 100%; height: 132px; border-radius: 7px;
+        border: 1px solid var(--border); background: var(--surface2); object-fit: cover;
+        object-position: top center; display: block; }
+  figure.step img { cursor: zoom-in; }
+  figure.step.failed img, figure.step.failed .ghost { border: 2px solid var(--failed); }
+  figure.step .ghost { border-style: dashed; }
+  figure.step.not_recorded { opacity: 0.45; }
+  figcaption { display: flex; gap: 7px; margin-top: 11px; font: 10px/1.45 var(--mono); color: var(--ts); }
+  figcaption .i { color: var(--v); margin-top: 0.22em; font-size: 9px; }
+  figcaption .drift { display: block; color: var(--incomplete); }
+
+  details.bg { margin-bottom: 15px; }
+  details.bg > summary { display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+        padding: 9px 14px; border-radius: 7px; font-size: 12px; color: var(--ts);
+        background: var(--surface2); border: 1px solid var(--border); list-style: none; }
+  details.bg > summary::-webkit-details-marker { display: none; }
+  details.bg > summary .chev { font-size: 9px; color: var(--tm); transition: transform 0.12s; }
+  details.bg[open] > summary .chev { transform: rotate(90deg); }
+  details.bg.failed > summary { background: #2B1517; border-color: #5C2327; color: #F0A6A3; }
+  details.bg.failed > summary .chev { color: inherit; }
+  details.bg > .strip { padding: 15px 0 3px; }
+
+  .failure { display: flex; gap: 11px; margin-top: 17px; padding: 14px 15px; border-radius: 8px;
+             background: #2B1517; font: 11px/1.6 var(--mono); color: #F0A6A3; }
+  .failure.warn { background: #2A1F0C; color: #EFCE7B; }
+  .failure b { display: block; font-weight: 600; }
+  .failure div > span { display: block; opacity: 0.82; }
+  .failure > .i { width: 14px; height: 14px; margin-top: 0.2em; }
+  .banner > .i { width: 15px; height: 15px; margin-right: 7px; vertical-align: -2px; }
+  footer .i { width: 13px; height: 13px; vertical-align: -2px; margin-right: 5px; }
+
+  /* A card, not a bare image: without a surface and padding the caption lands on the backdrop
+     over the dimmed report behind it. Reserve room for it so it can never overflow the box. */
+  dialog { border: 1px solid var(--border); padding: 18px; background: var(--surface);
+           border-radius: 14px; color: var(--tp); overflow: auto;
+           max-width: min(94vw, 1500px); max-height: 92vh; }
+  dialog:focus { outline: none; }
+  dialog::backdrop { background: rgba(2, 5, 10, 0.88); }
+  dialog img { display: block; max-width: 100%; max-height: 74vh; border-radius: 8px;
+               background: var(--surface2); cursor: zoom-in; }
+  /* Fit-to-window would show a 1280px screenshot at ~87%, which is no use for checking pixels.
+     Clicking swaps to 1:1 and the dialog scrolls. */
+  dialog.actual img { max-width: none; max-height: none; cursor: zoom-out; }
+  dialog p { margin: 16px 2px 2px; font: 12px/1.6 var(--mono); color: var(--ts);
+             position: sticky; left: 2px; }
+  dialog p .hint { color: var(--tm); }
+  footer { padding: 34px 36px 48px; font: 11.5px var(--mono); color: var(--tm); }
+
+  @media (max-width: 720px) {
+    header, .chips, section.feature { padding-left: 18px; padding-right: 18px; }
+    figure.step { width: calc(50% - 7px); }
+  }
+</style>
+</head>
+<body>
+<!-- Icons: Font Awesome Free 7.3.1 (CC BY 4.0) https://fontawesome.com/license/free
+     Paths inlined so the report stays a single file with no network requests. -->
+<svg hidden aria-hidden="true">
+  <symbol id="i-check" viewBox="0 0 448 512"><path d="M434.8 70.1c14.3 10.4 17.5 30.4 7.1 44.7l-256 352c-5.5 7.6-14 12.3-23.4 13.1s-18.5-2.7-25.1-9.3l-128-128c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l101.5 101.5 234-321.7c10.4-14.3 30.4-17.5 44.7-7.1z"/></symbol>
+  <symbol id="i-xmark" viewBox="0 0 384 512"><path d="M55.1 73.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L147.2 256 9.9 393.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L192.5 301.3 329.9 438.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L237.8 256 375.1 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192.5 210.7 55.1 73.4z"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 448 512"><path d="M0 256c0-17.7 14.3-32 32-32l384 0c17.7 0 32 14.3 32 32s-14.3 32-32 32L32 288c-17.7 0-32-14.3-32-32z"/></symbol>
+  <symbol id="i-circle-check" viewBox="0 0 512 512"><path d="M256 512a256 256 0 1 1 0-512 256 256 0 1 1 0 512zM374 145.7c-10.7-7.8-25.7-5.4-33.5 5.3L221.1 315.2 169 263.1c-9.4-9.4-24.6-9.4-33.9 0s-9.4 24.6 0 33.9l72 72c5 5 11.8 7.5 18.8 7s13.4-4.1 17.5-9.8L379.3 179.2c7.8-10.7 5.4-25.7-5.3-33.5z"/></symbol>
+  <symbol id="i-circle-xmark" viewBox="0 0 512 512"><path d="M256 512a256 256 0 1 0 0-512 256 256 0 1 0 0 512zM167 167c9.4-9.4 24.6-9.4 33.9 0l55 55 55-55c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9l-55 55 55 55c9.4 9.4 9.4 24.6 0 33.9s-24.6 9.4-33.9 0l-55-55-55 55c-9.4 9.4-24.6 9.4-33.9 0s-9.4-24.6 0-33.9l55-55-55-55c-9.4-9.4-9.4-24.6 0-33.9z"/></symbol>
+  <symbol id="i-circle-exclamation" viewBox="0 0 512 512"><path d="M256 512a256 256 0 1 1 0-512 256 256 0 1 1 0 512zm0-192a32 32 0 1 0 0 64 32 32 0 1 0 0-64zm0-192c-18.2 0-32.7 15.5-31.4 33.7l7.4 104c.9 12.6 11.4 22.3 23.9 22.3 12.6 0 23-9.7 23.9-22.3l7.4-104c1.3-18.2-13.1-33.7-31.4-33.7z"/></symbol>
+  <symbol id="i-triangle-exclamation" viewBox="0 0 512 512"><path d="M256 0c14.7 0 28.2 8.1 35.2 21l216 400c6.7 12.4 6.4 27.4-.8 39.5S486.1 480 472 480L40 480c-14.1 0-27.2-7.4-34.4-19.5s-7.5-27.1-.8-39.5l216-400c7-12.9 20.5-21 35.2-21zm0 352a32 32 0 1 0 0 64 32 32 0 1 0 0-64zm0-192c-18.2 0-32.7 15.5-31.4 33.7l7.4 104c.9 12.5 11.4 22.3 23.9 22.3 12.6 0 23-9.7 23.9-22.3l7.4-104c1.3-18.2-13.1-33.7-31.4-33.7z"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 320 512"><path d="M311.1 233.4c12.5 12.5 12.5 32.8 0 45.3l-192 192c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L243.2 256 73.9 86.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l192 192z"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 512 512"><path d="M149.1 64.8L138.7 96 64 96C28.7 96 0 124.7 0 160L0 416c0 35.3 28.7 64 64 64l384 0c35.3 0 64-28.7 64-64l0-256c0-35.3-28.7-64-64-64l-74.7 0-10.4-31.2C356.4 45.2 338.1 32 317.4 32L194.6 32c-20.7 0-39 13.2-45.5 32.8zM256 192a96 96 0 1 1 0 192 96 96 0 1 1 0-192z"/></symbol>
+  <symbol id="i-flask" viewBox="0 0 448 512"><path d="M288 0L128 0C110.3 0 96 14.3 96 32s14.3 32 32 32L128 215.5 7.5 426.3C2.6 435 0 444.7 0 454.7 0 486.4 25.6 512 57.3 512l333.4 0c31.6 0 57.3-25.6 57.3-57.3 0-10-2.6-19.8-7.5-28.4L320 215.5 320 64c17.7 0 32-14.3 32-32S337.7 0 320 0L288 0zM192 215.5l0-151.5 64 0 0 151.5c0 11.1 2.9 22.1 8.4 31.8l41.6 72.7-164 0 41.6-72.7c5.5-9.7 8.4-20.6 8.4-31.8z"/></symbol>
+</svg>
+<div class="wrap">
+  <header>
+    <div>
+      <h1 id="title">Browser Test Report</h1>
+      <div class="meta" id="meta"></div>
+    </div>
+    <div class="rate">
+      <div class="donut" id="donut"></div>
+      <div><b id="pct"></b><span>pass rate</span></div>
+    </div>
+  </header>
+  <div class="chips" id="chips"></div>
+  <div id="banners"></div>
+  <main id="report"></main>
+  <footer id="footer"></footer>
+</div>
+
+<dialog id="lightbox">
+  <img alt=""><p></p>
+</dialog>
+
+<script>
+const DATA = __DATA__;
+
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const ico = (name, cls = "") => `<svg class="i ${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+const TICK = { passed: "check", failed: "xmark", skipped: "minus", not_recorded: "minus" };
+const VERDICT_ICON = { passed: "circle-check", failed: "circle-xmark",
+                       incomplete: "circle-exclamation", not_run: "minus" };
+const LABEL = { passed: "passed", failed: "failed", incomplete: "incomplete", not_run: "not run" };
+
+const t = DATA.totals;
+document.getElementById("title").textContent =
+  `Browser test — ${t.passed}/${t.total} scenarios passed`;
+document.getElementById("meta").textContent = [
+  `${DATA.features.length} feature${DATA.features.length === 1 ? "" : "s"}`,
+  `${t.total} scenarios`,
+  new Date(DATA.generated_at).toLocaleString(),
+].join(" · ");
+document.title = `Browser Test — ${t.pass_rate}%`;
+
+// The arc is always green: it measures the pass rate, and a red arc at 50% reads as "50% failed".
+const donut = document.getElementById("donut");
+donut.style.setProperty("--pct", t.pass_rate);
+donut.style.setProperty("--dial", "var(--passed)");
+document.getElementById("pct").textContent = t.pass_rate + "%";
+
+document.getElementById("chips").innerHTML = [
+  ["passed", t.passed], ["failed", t.failed], ["incomplete", t.incomplete], ["not run", t.not_run],
+].filter(([, n]) => n > 0)
+ .map(([k, n]) => `<span class="chip"><i style="--c: var(--${k.replace(" ", "_")})"></i>${n} ${k}</span>`)
+ .concat(Object.entries(t.settled_by).map(([r, n]) =>
+   `<span class="chip"><i style="--c: var(--${esc(r)})"></i>${n} settled by ${esc(r)}</span>`))
+ .join("");
+
+// Two things that are invisible in a pass/fail table and shouldn't be: scenarios whose runner
+// stopped early, and one background step taking down several scenarios at once.
+const banners = [];
+if (t.incomplete || t.not_run) {
+  const stalled = DATA.features.flatMap((f) => f.scenarios)
+    .filter((s) => s.verdict === "incomplete" || s.verdict === "not_run");
+  banners.push(`<div class="banner">${ico("circle-exclamation")}<b>${stalled.length} scenario${stalled.length === 1 ? "" : "s"} did not finish.</b>
+    No step failed — the runner stopped before recording every step, so these are not passes.
+    <ul>${stalled.map((s) => `<li>${esc(s.name)} — ${s.recorded_steps} of ${s.expected_steps} steps recorded</li>`).join("")}</ul></div>`);
+}
+for (const c of DATA.background_failures) {
+  banners.push(`<div class="banner cluster">${ico("triangle-exclamation")}<b>One Background step failed in ${c.scenarios.length} scenarios.</b>
+    <code>${esc(c.step)}</code>${c.reason ? " — " + esc(c.reason) : ""}
+    <ul>${c.scenarios.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></div>`);
+}
+if (DATA.orphan_records.length) {
+  banners.push(`<div class="banner">${ico("triangle-exclamation")}<b>${DATA.orphan_records.length} recorded steps match no scenario in the specs.</b>
+    The spec changed after the run started, or a runner recorded under a different scenario name.</div>`);
+}
+document.getElementById("banners").innerHTML = banners.join("");
+
+function stepHTML(s) {
+  const src = DATA.images[s.img];
+  const shot = src
+    ? `<img loading="lazy" src="${src}" alt="${esc(s.text)}">`
+    : `<div class="ghost"></div>`;
+  const drift = s.drift ? `<span class="drift">runner recorded: ${esc(s.drift)}</span>` : "";
+  return `<figure class="step ${s.status}" style="--v: var(--${s.status === "not_recorded" ? "not_run" : s.status})">
+    ${shot}
+    <figcaption>${ico(TICK[s.status] ?? "minus")}<span>${esc(s.text)}${drift}</span></figcaption>
+  </figure>`;
+}
+
+function scenarioHTML(sc) {
+  const bg = sc.steps.filter((s) => s.origin === "background");
+  const own = sc.steps.filter((s) => s.origin !== "background");
+  const bgFailed = bg.some((s) => s.status === "failed");
+  const bgOk = bg.every((s) => s.status === "passed");
+  // Collapsed by default: Background repeats identically in every scenario of a feature, so
+  // expanding it inline would bury each scenario's real first step behind duplicate frames.
+  const bgMark = bgFailed ? ico("xmark") + " failed" : bgOk ? ico("check") : ico("minus");
+  const bgHTML = bg.length ? `<details class="bg ${bgFailed ? "failed" : ""}" ${bgFailed ? "open" : ""}>
+      <summary>${ico("chevron-right", "chev")}Background · ${bg.length} step${bg.length === 1 ? "" : "s"} ${bgMark}</summary>
+      <div class="strip">${bg.map(stepHTML).join("")}</div>
+    </details>` : "";
+
+  const note = sc.verdict === "failed"
+    ? `<div class="failure">${ico("circle-xmark")}<div><b>${esc(sc.failed_step ?? "")}</b>${sc.failure_reason ? `<span>${esc(sc.failure_reason)}</span>` : ""}</div></div>`
+    : sc.verdict === "incomplete" || sc.verdict === "not_run"
+    ? `<div class="failure warn">${ico("circle-exclamation")}<div><b>Recorded ${sc.recorded_steps} of ${sc.expected_steps} steps, then stopped.</b><span>No step failed, so this is not a pass.</span></div></div>`
+    : "";
+
+  // Sub-100ms is the recorder's own overhead, not a measurement worth showing.
+  const dur = sc.elapsed_ms >= 100 ? `<span class="dur">${(sc.elapsed_ms / 1000).toFixed(1)}s</span>` : "";
+  const runner = sc.runner ? `<span class="badge ${esc(sc.runner)}">${esc(sc.runner)}</span>` : "";
+  return `<article class="card ${sc.verdict}" style="--v: var(--${sc.verdict})">
+    <div class="chead">
+      <div class="left">${ico(VERDICT_ICON[sc.verdict], "verdict-icon")}<h3>${esc(sc.name)}</h3></div>
+      <div class="left"><span class="badge verdict">${LABEL[sc.verdict]}</span>${runner}${dur}</div>
+    </div>
+    ${bgHTML}
+    <div class="strip">${own.map(stepHTML).join("")}</div>
+    ${note}
+  </article>`;
+}
+
+document.getElementById("report").innerHTML = DATA.features.map((f) => {
+  const pass = f.scenarios.filter((s) => s.verdict === "passed").length;
+  const all = f.scenarios.length;
+  return `<section class="feature">
+    <div class="fhead">
+      <div>
+        <h2>${esc(f.name || f.file.split("/").pop())}</h2>
+        <span class="file">${esc(f.file)}</span>
+      </div>
+      <span class="count" style="color: var(--${pass === all ? "passed" : "failed"})">${pass} / ${all}</span>
+    </div>
+    ${f.testdata.length ? `<ul class="testdata">${f.testdata.map((d) => `<li>${ico("flask")}<span class="k">testdata:</span>${esc(d.command)}</li>`).join("")}</ul>` : ""}
+    ${f.scenarios.map(scenarioHTML).join("")}
+  </section>`;
+}).join("");
+
+document.getElementById("footer").innerHTML = ico("camera") +
+  `${DATA.frames} frames · ${Object.keys(DATA.images).length} distinct images embedded · generated by browser-test`;
+
+// Full resolution on click: the screenshots are stored unscaled so a designer can check pixels.
+const box = document.getElementById("lightbox");
+const full = box.querySelector("img");
+document.addEventListener("click", (e) => {
+  const img = e.target.closest("figure.step img");
+  if (img) {
+    full.src = img.src;
+    box.querySelector("p").innerHTML =
+      `${esc(img.alt)} <span class="hint">· click the image for 1:1</span>`;
+    box.classList.remove("actual");
+    box.showModal();
+  } else if (e.target === full) {
+    box.classList.toggle("actual");
+    box.scrollTo({ top: 0, left: 0 });
+  } else if (e.target === box) {
+    box.close();
+  }
+});
+</script>
+</body>
+</html>
