@@ -782,12 +782,36 @@ class Handler(BaseHTTPRequestHandler):
             if new:
                 # remember what the reviewer saw, so a later change can be
                 # shown as a delta instead of a full re-review
+                #
+                # The key's hash fingerprints the diff the page was showing. If
+                # the working tree moved between page load and this click, the
+                # content now on disk is NOT what they reviewed: storing it
+                # would make review_delta diff that content against itself,
+                # come up empty, and tell them nothing changed while hiding a
+                # real edit. Only snapshot when the hashes still agree.
                 try:
+                    seen = key[pos + 1:]
+                    current = file_hash(file_hunks(
+                        self.args.repo, self.args.target, path, base=self.base))
                     content = new_side(self.args.repo, self.base, path)
                     with LOCK:
-                        self.con.execute(
-                            'INSERT OR REPLACE INTO snapshots(path, content) '
-                            'VALUES(?, ?)', (path, content))
+                        if current == seen:
+                            self.con.execute(
+                                'INSERT OR REPLACE INTO snapshots(path, content) '
+                                'VALUES(?, ?)', (path, content))
+                        else:
+                            # Drop any older snapshot too — it belongs to a
+                            # different mark. review_delta then falls back to
+                            # backfill_snapshot, which recovers the reviewed
+                            # version if it was ever committed and otherwise
+                            # returns None, so the UI shows the full diff with
+                            # the stale badge. Both are honest; a silent "no
+                            # changes" is not.
+                            self.con.execute(
+                                'DELETE FROM snapshots WHERE path=?', (path,))
+                            print(f'stale mark for {path}: page had {seen}, '
+                                  f'working tree is {current}; no snapshot stored',
+                                  flush=True)
                         self.con.commit()
                 except Exception as e:
                     print(f'snapshot failed for {path}: {e}', flush=True)

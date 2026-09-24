@@ -193,6 +193,36 @@ def main():
     resnap = con2.execute('SELECT count(*) FROM snapshots').fetchone()
     assert resnap[0] == 1, 'backfill should persist the reconstructed snapshot'
 
+    # stale mark: the working tree moves between page load and the click, so the
+    # key still carries the hash the page was showing. Snapshotting what is on
+    # disk now would store content the reviewer never saw, and review_delta
+    # would diff it against itself and report "no content changes" while hiding
+    # the edit. The mark still lands; only the snapshot is withheld.
+    sh(repo, 'git', 'commit', '-aqm', 'add div')
+    hunks3 = render_file(str(repo), 'main', 'app.py')
+    stale_key = f'file:app.py:{srv.file_hash(hunks3)}'
+    if not toggle_key(stale_key)['reviewed']:
+        toggle_key(stale_key)
+    (repo / 'app.py').write_text(
+        (repo / 'app.py').read_text().replace('    return a * b\n', '    return b * a\n'))
+    assert srv.file_hash(render_file(str(repo), 'main', 'app.py')) != \
+        stale_key.rsplit(':', 1)[1], 'the edit should have changed the file hash'
+
+    con2.execute('DELETE FROM snapshots')
+    con2.commit()
+    toggle_key(stale_key)          # un-review
+    assert toggle_key(stale_key)['reviewed'], 're-review should still register'
+    assert con2.execute('SELECT count(*) FROM snapshots').fetchone()[0] == 0, \
+        'a mark carrying a stale hash must not snapshot content never reviewed'
+
+    delta3 = json.loads(urllib.request.urlopen(
+        f'http://127.0.0.1:{port}/api/reviewdelta?path=app.py').read())
+    assert delta3['available'] and delta3['hunks'], \
+        f'the edit made after page load must surface, not read as unchanged: {delta3}'
+    html3 = delta3['hunks'][0]['html']
+    assert 'class="del"' in html3 and 'class="add"' in html3, \
+        f'the delta should show the edited line as a change: {html3}'
+
     # uncommitted-state badge: app.py currently has unstaged edits, then staged
     page4 = urllib.request.urlopen(f'http://127.0.0.1:{port}/').read().decode()
     assert '"wip": "edited"' in page4, 'unstaged edit not flagged'
