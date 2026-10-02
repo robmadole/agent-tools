@@ -16,6 +16,42 @@ SCENARIOS TO RUN (if this list is empty, run every scenario in the file):
 
 ## Step 1 — Execute scenarios
 
+### Try the step helper first
+
+Before driving a step by hand, try the helper bridge. It runs the project's own Playwright mapping for that
+step phrasing — the same code the Jev runner uses — in one call, with no snapshot:
+
+```
+{playwright tool prefix}browser_run_code_unsafe with code:
+async (page) => page.__runStep('When I click the "Save" button', {helper context})
+```
+
+Pass the step text **exactly as it appears in the .feature file**, keyword included, and `{helper context}` as
+written below (it carries this run's base URL and the test data values).
+
+- **Returns `true`** — the step is done. Record it and move on. Do not re-do it by hand, and do not take a
+  snapshot to confirm it; the tool result already reports the page URL and title.
+- **Returns `false`** — no helper covers that phrasing, or one did but the page didn't match it. Drive the step
+  the normal way, with the tools below. This is routine, not an error.
+
+A `false` is **never** a reason to fail a step. The helpers are a shortcut, not the authority: anything they
+can't settle, you settle yourself, exactly as you would have without them.
+
+Worth knowing: one call can settle several steps, which is the cheap way to get through a Background —
+but you still record each step separately.
+
+```
+async (page) => ({
+  a: await page.__runStep('Given I am on the "Sign In" page', {helper context}),
+  b: await page.__runStep('When I fill in "Email" with "user@example.com"', {helper context}),
+})
+```
+
+If `page.__runStep` is not a function, the bridge isn't loaded in this session. Say so once in `difficulties`
+and run every step by hand.
+
+### Driving a step yourself
+
 Read the .feature file, then execute each scenario (only the ones listed above, if any are listed):
 
 1. Execute Background steps first (if any)
@@ -62,6 +98,9 @@ apostrophe, use double quotes and backslash-escape the inner double quotes inste
 Rules:
 
 - `--status` is `passed` or `failed`. Nothing else.
+- Add `--lane helper` when `page.__runStep` settled the step, and `--lane model` when you drove it
+  yourself. It costs nothing and it is what tells the operator which phrasings are still worth a
+  helper — a step you drove by hand is a step that could stop needing you.
 - On a failure, add `--reason '<what went wrong>'`, and record the failing step itself.
 - **Do not record skipped steps.** Steps after a failure need no record at all — the report draws
   them as empty frames automatically.

@@ -20,9 +20,9 @@ import path from "path";
 import { parseArgs } from "util";
 import { AstBuilder, GherkinClassicTokenMatcher, Parser, compile } from "@cucumber/gherkin";
 import { chromium } from "playwright-core";
-import { Database } from "bun:sqlite";
-import { pickleName, recordStep } from "./report.js";
+import { openRun, pickleName, recordStep } from "./report.js";
 import { CODE_STEPS, LITERAL_CHECKS, matchFirst } from "./checks.js";
+import { runStep, loadHelpers } from "./helpers.js";
 
 // ponytail: placeholder thresholds; decisions.jsonl keeps every probability so they can be re-tuned offline.
 const MAX_ACTIONS = 10;
@@ -44,6 +44,9 @@ const FAIL = 0.2;
 const STEP_PASS = 0.5;
 const ASSERT_TIMEOUT_MS = 5000;
 const SCENARIO_TIMEOUT_MS = 180_000;
+// A helper gets its own short ceiling so a project helper that hangs (an unresolved waitForURL, say) costs one
+// step's delay rather than eating the scenario budget. Past it the step just goes to the model.
+const HELPER_TIMEOUT_MS = 10_000;
 const MAX_OPTIONS = 255;
 const KEYS = ["Enter", "Escape", "Tab", "ArrowDown", "ArrowUp", "Space", "Backspace"];
 const POINTER_ROLES = new Set(["button", "link", "checkbox", "radio", "switch", "tab", "menuitem",
@@ -134,6 +137,7 @@ const { values: opts, positionals: files } = parseArgs({
     "base-url": { type: "string" },
     values: { type: "string" },
     routes: { type: "string" },
+    helpers: { type: "string" },
     artifacts: { type: "string" },
     jobs: { type: "string", default: "4" },
     headed: { type: "boolean" },
@@ -144,7 +148,8 @@ const { values: opts, positionals: files } = parseArgs({
 });
 if (!files.length || !opts["base-url"]) {
   console.error("Usage: bun jev-run.js <a.feature ...> --base-url <url> [--values <json|@file>] [--routes <json|@file>] " +
-    "[--artifacts <dir>] [--jobs 4] [--headed] [--report-run <dir> [--report-id <id>] [--report-shots]]");
+    "[--helpers <playwright-helpers.js>] [--artifacts <dir>] [--jobs 4] [--headed] " +
+    "[--report-run <dir> [--report-id <id>] [--report-shots]]");
   process.exit(2);
 }
 if (!process.env.TYPESAFE_API_KEY) {
@@ -158,6 +163,11 @@ const flatten = (obj, prefix = "") => Object.entries(obj).reduce((acc, [k, v]) =
   v && typeof v === "object" ? { ...acc, ...flatten(v, `${prefix}${k}.`) } : { ...acc, [`${prefix}${k}`]: v }, {});
 const VALUES = flatten(jsonArg(opts.values));
 const ROUTES = jsonArg(opts.routes);
+// The project's own step mappings, ahead of the generic table so a project can shadow one that doesn't fit its
+// app. Absent is the normal case — a project starts with none and grows them from what its runs actually spend
+// model requests on.
+const HELPERS = await loadHelpers(opts.helpers);
+const CTX = { base: opts["base-url"], values: VALUES, routes: ROUTES };
 
 if (opts.artifacts) fs.mkdirSync(opts.artifacts, { recursive: true });
 const OUT = fs.mkdtempSync(path.join(opts.artifacts ?? os.tmpdir(), "jev-"));
@@ -167,13 +177,7 @@ const newId = () => crypto.randomUUID();
 
 // The same recorder the Claude runner drives through the CLI, called in-process here: the PNG is
 // already a Buffer, so a Jev step costs one insert and never touches a temp file.
-const REPORT = opts["report-run"]
-  ? (() => {
-      const db = new Database(path.join(opts["report-run"], "run.db"));
-      db.exec("PRAGMA busy_timeout = 10000");
-      return db;
-    })()
-  : null;
+const REPORT = opts["report-run"] ? openRun(opts["report-run"]) : null;
 
 async function jev(state, questions, meter) {
   for (let attempt = 0; ; attempt++) {
@@ -584,6 +588,12 @@ async function runScenario(browser, file, pickle, name, keywords, testValues, me
       result.steps.push({ step, status: "skipped" });
       continue;
     }
+    // A helper settles the step with plain Playwright and no model request. This sits OUTSIDE the try below,
+    // which turns a throw into a failed step — runStep never throws, and anything it can't settle cleanly comes
+    // back false so the step falls through to the lanes underneath. That's the whole bargain: a helper gone
+    // stale costs one model request, never a failed test.
+    const helped = await within(HELPER_TIMEOUT_MS, runStep(page, run.steps[i].raw, CTX, HELPERS), "helper")
+      .then((ok) => ok, () => false);
     const code = matchFirst(CODE_STEPS, run.steps[i].raw);
     // Gherkin gives an `And` the type of the keyword above it, so `When I click "X" / And I should see "Y"` makes
     // the assertion an Action step, and actionStep asks Jev for an operation instead of checking anything — it
@@ -592,7 +602,8 @@ async function runScenario(browser, file, pickle, name, keywords, testValues, me
     const literal = matchFirst(LITERAL_CHECKS, run.steps[i].raw);
     let outcome;
     try {
-      const work = code ? Promise.resolve(code[1](page, code[0])).then(() => ({}))
+      const work = helped ? Promise.resolve({})
+        : code ? Promise.resolve(code[1](page, code[0])).then(() => ({}))
         : literal || run.steps[i].type === "Outcome" ? outcomeStep(page, run, i)
         : actionStep(page, run, i);
       outcome = await within(Math.max(deadline - Date.now(), 1), work, "scenario");
@@ -604,13 +615,16 @@ async function runScenario(browser, file, pickle, name, keywords, testValues, me
       result.escalate = outcome.escalate ?? true;
       await page.screenshot({ path: path.join(OUT, `${name.replace(/\W+/g, "-")}.png`), timeout: 5000 }).catch(() => {});
     }
-    result.steps.push({ step, status: outcome.fail ? "failed" : "passed" });
+    // Which lane settled the step. "model" is what a run still spends Jev requests on, and it's the input to
+    // the helper suggestions after a run — the phrasings showing up here most often are the ones worth a helper.
+    const lane = helped ? "helper" : code ? "code" : literal ? "literal" : "model";
+    result.steps.push({ step, status: outcome.fail ? "failed" : "passed", lane });
     if (REPORT) {
       const png = opts["report-shots"]
         ? await page.screenshot({ type: "png", timeout: 5000 }).catch(() => null)
         : null;
       recordStep(REPORT, {
-        runId: opts["report-id"], runner: "jev", feature: run.file, scenario: name,
+        runId: opts["report-id"], runner: "jev", feature: run.file, scenario: name, lane,
         step, status: outcome.fail ? "failed" : "passed", reason: outcome.fail ?? null, screenshot: png,
       });
     }

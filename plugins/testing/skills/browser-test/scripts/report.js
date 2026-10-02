@@ -30,7 +30,10 @@ CREATE TABLE IF NOT EXISTS steps (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   ts INTEGER NOT NULL, run_id TEXT NOT NULL, runner TEXT NOT NULL,
   feature TEXT NOT NULL, scenario TEXT NOT NULL,
-  step TEXT NOT NULL, status TEXT NOT NULL, reason TEXT, png BLOB);
+  step TEXT NOT NULL, status TEXT NOT NULL, reason TEXT, png BLOB,
+  -- How the step was settled: helper | code | literal | model. Null for runners that don't report it. What it
+  -- buys is a coverage number that moves between runs, which is the only way progressive helpers stay honest.
+  lane TEXT);
 CREATE INDEX IF NOT EXISTS steps_scenario ON steps (feature, scenario, id);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 `;
@@ -119,11 +122,17 @@ function initRun(runDir, specs) {
   return { features: specs.length, scenarios, steps };
 }
 
-const openRun = (runDir) => {
+// Exported so jev-run.js opens the database the same way rather than keeping its own copy of this.
+export const openRun = (runDir) => {
   const file = path.join(runDir, "run.db");
   if (!fs.existsSync(file)) die(`No run database at ${file}. Run "report init" first.`);
   const db = new Database(file);
   db.exec("PRAGMA busy_timeout = 10000");
+  // `lane` arrived after the schema did, and a run dir can outlive a skill update — without this an older
+  // run.db rejects every insert with "no column named lane", which reads as a dead runner.
+  if (!db.query("PRAGMA table_info(steps)").all().some((c) => c.name === "lane")) {
+    db.exec("ALTER TABLE steps ADD COLUMN lane TEXT");
+  }
   return db;
 };
 
@@ -132,10 +141,10 @@ const openRun = (runDir) => {
 export function recordStep(db, r) {
   if (!STATUSES.has(r.status)) die(`--status must be one of ${[...STATUSES].join(", ")}`);
   db.prepare(
-    `INSERT INTO steps (ts, run_id, runner, feature, scenario, step, status, reason, png)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO steps (ts, run_id, runner, feature, scenario, step, status, reason, png, lane)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(Date.now(), r.runId ?? "1", r.runner ?? "claude", r.feature, r.scenario,
-        r.step, r.status, r.reason ?? null, r.screenshot ?? null);
+        r.step, r.status, r.reason ?? null, r.screenshot ?? null, r.lane ?? null);
 }
 
 function summarize(db) {
@@ -147,7 +156,7 @@ function summarize(db) {
   // Claude fallback after a Jev pass both append a fresh set rather than editing the old one.
   const current = db.query(`
     WITH last AS (SELECT feature, scenario, MAX(id) AS mid FROM steps GROUP BY feature, scenario)
-    SELECT s.id, s.ts, s.run_id, s.runner, s.feature, s.scenario, s.step, s.status, s.reason,
+    SELECT s.id, s.ts, s.run_id, s.runner, s.feature, s.scenario, s.step, s.status, s.reason, s.lane,
            s.png IS NOT NULL AS has_png
       FROM steps s JOIN last l ON s.feature = l.feature AND s.scenario = l.scenario
      WHERE s.run_id = (SELECT run_id FROM steps WHERE id = l.mid)
@@ -185,6 +194,7 @@ function summarize(db) {
         reason: r?.reason ?? null,
         step_id: r?.id ?? null,
         has_png: Boolean(r?.has_png),
+        lane: r?.lane ?? null,
         drift: r && r.step !== e.step ? r.step : null,
       };
     });
@@ -206,6 +216,14 @@ function summarize(db) {
   const settled = {};
   for (const s of out) if (s.runner) settled[s.runner] = (settled[s.runner] ?? 0) + 1;
 
+  // How each step got settled. `model_free_rate` is the number to watch across runs: it goes up as a project
+  // adds helpers, and it's the only honest measure of whether they're earning their keep. Steps recorded
+  // without a lane (the Claude runner before the bridge) are left out rather than counted as either.
+  const lanes = {};
+  for (const s of out) for (const st of s.steps) if (st.lane) lanes[st.lane] = (lanes[st.lane] ?? 0) + 1;
+  const laneTotal = Object.values(lanes).reduce((a, b) => a + b, 0);
+  const modelFree = laneTotal - (lanes.model ?? 0);
+
   // A background step failing across N scenarios is one broken thing, not N bugs. Phase 2b would
   // otherwise read the source and investigate the same root cause once per scenario.
   const clusters = new Map();
@@ -224,6 +242,8 @@ function summarize(db) {
       incomplete: count("incomplete"), not_run: count("not_run"),
       pass_rate: out.length ? Math.round((count("passed") / out.length) * 100) : 0,
       settled_by: settled,
+      steps_by_lane: lanes,
+      model_free_rate: laneTotal ? Math.round((modelFree / laneTotal) * 100) : null,
     },
     features: [...featureNames].map(([file, name]) => ({
       file, name,
@@ -284,6 +304,7 @@ const { values: opts, positionals } = parseArgs({
     status: { type: "string" },
     reason: { type: "string" },
     screenshot: { type: "string" },
+    lane: { type: "string" },
     out: { type: "string" },
     steps: { type: "boolean", default: false },
   },
@@ -294,7 +315,7 @@ const USAGE = `usage: report <init|record|summary|build> --run <dir> [...]
 
   init    --run <dir> <spec.feature ...>          write the manifest of expected scenarios
   record  --run <dir> --feature F --scenario S --step "..." --status passed|failed
-          [--run-id ID] [--runner N] [--reason R] [--screenshot PATH]
+          [--run-id ID] [--runner N] [--reason R] [--screenshot PATH] [--lane helper|model]
   summary --run <dir>                             reconciled verdicts and totals, as JSON
   build   --run <dir> --out <file.html>           one self-contained HTML report`;
 if (!cmd || !["init", "record", "summary", "build"].includes(cmd)) die(USAGE);
@@ -321,7 +342,7 @@ if (cmd === "init") {
   const db = openRun(opts.run);
   recordStep(db, {
     runId: opts["run-id"], runner: opts.runner, feature: opts.feature, scenario: opts.scenario,
-    step: opts.step, status: opts.status, reason: opts.reason, screenshot: png,
+    step: opts.step, status: opts.status, reason: opts.reason, screenshot: png, lane: opts.lane,
   });
   db.close();
   console.log(`recorded ${opts.status}: ${opts.step}`);

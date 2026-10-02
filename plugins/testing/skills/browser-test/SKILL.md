@@ -1,7 +1,7 @@
 ---
 name: browser-test
-description: "Orchestrate QA browser testing via Gherkin specs and Playwright, with an optional fast Jev runner."
-version: 2.2.0
+description: "Orchestrate QA browser testing via Gherkin specs and Playwright, with an optional fast Jev runner and project step helpers that run without a model request."
+version: 2.4.0
 ---
 
 # Browser Test — QA Testing with Gherkin Specs
@@ -11,6 +11,8 @@ You orchestrate a multi-phase QA browser testing workflow. You generate Gherkin 
 You perform all roles directly — spec generation, reporting, gap analysis — and use **subagents only for concurrent test execution** (up to 3 Playwright instances in parallel).
 
 When `.browser-tests.json` sets `"runner": "jev"`, execution starts with `scripts/jev-run.js`, a script that drives the browser with TypeSafe's Jev model instead of a Claude subagent. It is several times faster and uses no Claude tokens. Scenarios it can't settle fall back to the Claude subagents.
+
+Underneath both runners sits `{directory}/playwright-helpers.js`: step phrasings mapped to Playwright code that runs with no model request at all. The Jev runner loads it with `--helpers`, the Claude runner calls it through `page.__runStep`, and it is the same function in both. A helper that can't settle a step defers to the model rather than failing it, so the file is only ever an optimization — see Phase 2c, which grows it from what a run actually spent requests on.
 
 ## Modes of operation
 
@@ -44,6 +46,10 @@ Before proceeding, verify all of the following. If any check fails, stop immedia
    > This skill requires Bun to run the validation script. Install it from https://bun.sh before running `/browser-test`.
 
 3. **Agent tool** — Verify that the `Agent` tool is available (used for concurrent test execution and audit subagents).
+
+   Both runners are headless: the MCP servers pass `--headless`, and `jev-run.js` launches headless unless given `--headed`. A dozen browser windows opening and stealing focus mid-run is the thing that makes a full suite unpleasant to sit through, and nothing in either runner needs a visible window — screenshots, network capture and the accessibility snapshot all work without one. To watch a run, pass `--headed` to `jev-run.js`; for the Claude runner, drop `--headless` from the plugin's `.mcp.json`.
+
+   The helper bridge needs `--init-page`, which `@playwright/mcp` has had since 0.0.82. The plugin's `.mcp.json` asks for `@latest`, so this is normally a non-issue — but if none of the three Playwright servers came up at all, an unsupported flag is the first thing to suspect, because the server exits on an unknown option rather than ignoring it. Nothing else here depends on the bridge: a run without it is the run you got before it existed.
 
 4. **Jev runner** (only when `runner` is `jev`) — Google Chrome must be installed, since `scripts/jev-run.js` drives it through `playwright-core`. A TypeSafe key must be available, either as `TYPESAFE_API_KEY` in the environment or through `jev.envFile`. The runner reports a missing key on its first invocation; stop there if it does.
 
@@ -102,18 +108,14 @@ If the key is absent but the operator's request already names a format — "give
 "visual" and "a page I can look at" all mean `"visual"`; "markdown", "md" and "the usual report"
 mean `"markdown"`.
 
-If the key is **absent** and they haven't said, ask before going any further:
+If the key is **absent** and they haven't said, use `["visual"]` without asking. Say which you
+picked in one line, and offer to persist it to `.browser-tests.json`.
 
-> What reports would you like from this run?
->
-> a) **Markdown** — the usual `{directory}/results/*.md` report
-> b) **Visual** — a single self-contained HTML page, one screenshot per step, grouped into
->    per-scenario filmstrips. Adds a screenshot and a record call to every step, so a Claude-run
->    scenario takes longer. Jev pays almost nothing for it.
-> c) **Both**
-
-Remember the answer for the rest of the run. Offer to persist it to `.browser-tests.json` so they
-aren't asked again.
+Visual is the default because it is the format people actually read: one self-contained HTML page,
+one screenshot per step, grouped into per-scenario filmstrips. It costs a screenshot and a record
+call per step, which the Jev runner pays almost nothing for and a Claude runner notices. Markdown is
+still there for the appendable textual record across runs — set `"reports": ["markdown"]`, or
+`["markdown", "visual"]` for both.
 
 Whatever they pick, **steps are always recorded.** Recording is what makes the pass/fail counts
 deterministic rather than something you tally by hand, and `report summary` is the source for both
@@ -194,7 +196,7 @@ Analyze the gathered context and generate Gherkin `.feature` files:
 
 1. Identify all testable behaviors from the context
 2. Group tests by category using the directory naming from the guide (sign-in/, navigation/, reservations/, etc.)
-3. Write `.feature` files following the step phrasing conventions exactly
+3. Write `.feature` files following the step phrasing conventions exactly. Where two phrasings say the same thing, pick the one already in the guide's vocabulary — those are the phrasings the step helpers settle without a model request, and a new spec written in them is fast from its first run. This is free at generation time and it keeps the long tail of one-off phrasings from growing.
 4. Save each file directly to `{directory}/specs/{category}/{filename}` — create category directories as needed
 5. Think about edge cases: empty states, validation errors, permission boundaries, navigation flows
 
@@ -283,11 +285,12 @@ Skip this section when `runner` is `claude` or unset.
 2. **Run the Jev runner, one Bash call per feature file, up to 4 in parallel per message:**
 
    ```bash
-   bun --env-file={jev.envFile} {absolute path to this skill}/scripts/jev-run.js {file path} --base-url {base URL} --values @{values file} --routes @{routes file} --artifacts {directory}/tmp/jev --report-run {run dir} --report-id {run-id}
+   bun --env-file={jev.envFile} {absolute path to this skill}/scripts/jev-run.js {file path} --base-url {base URL} --values @{values file} --routes @{routes file} --helpers {directory}/playwright-helpers.js --artifacts {directory}/tmp/jev --report-run {run dir} --report-id {run-id}
    ```
 
    - When `jev.envFile` is unset, drop `--env-file=…`. The key then comes from `TYPESAFE_API_KEY` in the environment.
    - When there are no routes, drop `--routes`.
+   - When `{directory}/playwright-helpers.js` does not exist, drop `--helpers`. The generic helpers still apply; only the project's own are missing.
    - Add `--report-shots` when `reports` includes `"visual"`. Jev screenshots straight to memory, so
      this costs it a few milliseconds per step and no tokens.
    - If the runner exits with `TYPESAFE_API_KEY is not set.`, stop. Tell the operator to export the key or set `jev.envFile`.
@@ -318,6 +321,7 @@ There are 3 Playwright MCP server instances available, whose tool prefixes you r
    - `{further setup}` — the furtherSetup content (or empty if not set)
    - `{testdata context}` — if this file had `testdata:` directives, include the resolved data (IDs, credentials, etc.) as a "TEST DATA" block the runner can reference when interpreting steps. If no `testdata:` directives were present, substitute with empty string.
    - `{verification tools}` — the `verificationTools` list from configuration, formatted as a bullet per tool. If unset or empty, substitute with empty string.
+   - `{helper context}` — a JSON object literal the runner pastes into its `page.__runStep` calls: `{"base": "<base URL>", "values": {<this feature's resolved testdata, flattened>}}`. Use the values from the testdata pass that ran **for this dispatch** — on a Jev run the testdata was re-run before the fallback, so the Jev pass's values are stale and would point the runner at records that no longer exist. With no testdata, `{"base": "<base URL>", "values": {}}`.
    - `{scenarios}` — in a Jev run, the leftover scenario names from that file, one bullet each. Otherwise, substitute with an empty string, which runs every scenario.
    - `{report command}` — the record command with everything the runner doesn't vary already baked in:
 
@@ -325,7 +329,7 @@ There are 3 Playwright MCP server instances available, whose tool prefixes you r
      bun {absolute path to this skill}/scripts/report.js record --run {run dir} --run-id {run-id} --feature {file path}
      ```
 
-     The runner appends `--scenario`, `--step`, `--status` and (on failure) `--reason`. Keeping the
+     The runner appends `--scenario`, `--step`, `--status`, `--lane` and (on failure) `--reason`. Keeping the
      paths out of the runner's hands is what stops it from inventing them.
    - `{screenshot instructions}` — when `reports` includes `"visual"`, substitute:
 
@@ -397,8 +401,23 @@ leftovers to clarify, proceed to Phase 2b. Otherwise skip to Phase 3.
 For each failed scenario:
 
 1. Read the original `.feature` file from `{directory}/specs/{category}/{filename}`
-2. Read the relevant source code to understand the current application behavior
-3. Determine the cause:
+2. **Look at the screenshot of the failing step.** It is a PNG on disk and the `Read` tool displays
+   it. Do this before reading any source — the picture usually settles which of the three causes
+   below it is in one look, and reading source first to explain a failure the screenshot explains
+   immediately is the most common way this phase wastes time.
+   - Jev failures: `{artifacts}/<scenario name with every run of non-alphanumerics replaced by a
+     hyphen>.png`, where `{artifacts}` is the `artifacts` path in that runner's JSON output. Written
+     for every failed scenario whether or not reports include `"visual"`.
+   - Claude failures: `{run dir}/shots/<slug>-<n>.png`, the file the runner passed to
+     `--screenshot`. Present whenever reports include `"visual"`, which is the default.
+
+   What it tells you, from real runs: a page that is an unbuilt placeholder, an error page, or a
+   sign-in form you did not expect means the step never reached the page the spec is about, and the
+   assertion that "failed" was never really evaluated. An expected string genuinely absent from a
+   page that is otherwise correct is a stale spec. A half-rendered page points at timing.
+3. Read the relevant source code to understand the current application behavior — guided by what the
+   screenshot showed, not instead of it.
+4. Determine the cause:
    - **STALE SPEC**: The application behavior changed legitimately and the spec needs updating
    - **POSSIBLE BUG**: The application behavior seems wrong — the spec's expectation looks correct
    - **ENVIRONMENT ISSUE**: Timing, missing data, or test environment problems
@@ -409,7 +428,9 @@ Work `incomplete` and `not_run` scenarios here too. The summary says exactly whe
 stopped, and the step it stopped on is the evidence:
 
 - **A step that hangs the app** — the last recorded step is the one before a page that never
-  settled. This is the common case and usually a real bug worth reporting, not a spec problem.
+  settled. This is the common case and usually a real bug worth reporting, not a spec problem. Its
+  screenshot is worth a look for the same reason as above: a half-rendered page, a spinner, or an
+  error says which.
 - **A runner that ran out of room** — a long scenario under the Claude runner. Splitting the
   scenario is the fix.
 - **A whole feature that is `not_run`** — the subagent failed before starting. Re-dispatch that
@@ -470,6 +491,7 @@ After completing all repairs and clarifications, spawn a single `Agent` subagent
 - Whether it is a `repair` or a `clarification`
 - What you changed and why
 - The source code evidence you cited, or for a clarification, the runner interpretation or Jev reason it came from
+- The path to the failing step's screenshot, if there is one. Hand over the path, not your reading of it — the auditor looking at the same page and disagreeing with you is the entire point of the audit, and a page that turns out to be an error or placeholder is how a repair you called legitimate gets caught as a real bug
 
 Wait for the auditor's JSON findings before proceeding.
 
@@ -506,6 +528,75 @@ After receiving audit findings:
    - After the re-run, proceed to Phase 3
 
 If there were **no suspected bugs** from either the repair analysis or the auditor and all repairs were legitimate, re-run the repaired specs through Phase 2 (and clarified-only files through the Jev runner alone, as above), then proceed to Phase 3.
+
+---
+
+## Phase 2c — Grow the step helpers
+
+Only when the run is otherwise settled: no `failed`, `incomplete` or `not_run` scenarios left. A helper written
+against a broken page bakes in the breakage.
+
+`{directory}/playwright-helpers.js` maps step phrasings to Playwright code. Both runners load it — the Jev
+runner through `--helpers`, the Claude runner through `page.__runStep` — so a helper added here stops costing
+a model request in either. It grows from what the run actually spent requests on, never from guesswork.
+
+1. **Find what still costs a request.** From `report summary --steps`, take the steps recorded with
+   `lane: "model"`, normalize each (replace quoted values with `"X"`, digits with `N`), and count them. Show
+   the operator the top ones with their counts, most frequent first, and the current `model_free_rate`:
+
+   ```
+   Run 7: 62% of steps ran without a model request.
+   The 5 phrasings that cost the most, out of 812 model steps:
+
+     39  I am signed in as the admin for the exemplar
+     29  I increase the "X" stepper by one step
+     25  I am on the guest-info page for the seeded reservation request
+     23  I am on the reservation page for "X" with check-in "X" and check-out "X"
+     22  I add the icon "X" to the composition
+
+   Write helpers for these? (all / a subset / none)
+   ```
+
+   Offer at most 10. A phrasing used once is not worth a helper; leave it to the model.
+
+   **Rank by how many model requests a phrasing costs, not just how often it appears.** A `Given` that
+   describes a situation to reach — signing in, landing on a seeded record — is one step that the model spends
+   a whole action loop on, several requests deep. A single `When I click …` is one step and one request. Measured
+   on a real suite: the generic table alone took model requests from 300 to 118 and barely moved wall clock,
+   because the model's sign-in chain still gated the slowest workers. Adding **one** helper for that chain took
+   requests to 47 and wall clock down 31%. A multi-step `Given` is worth more than its step count suggests, and
+   is the first helper to write.
+
+2. **Write them**, appending to `{directory}/playwright-helpers.js` (create it if absent — see
+   `references/setup.md` for the shape). For each accepted phrasing, base the body on what the runner actually
+   did this run: the Jev `decisions.jsonl` records every action it chose, and a Claude runner's transcript shows
+   the tools it called. Do not invent a route or a label you did not see work.
+
+   Two rules, both of which produce a helper that passes today and lies tomorrow when broken:
+
+   - **Never hardcode a value that came from `testdata:`.** IDs, emails and slugs differ every run. Read them
+     from `ctx.values`. Before re-running, check each new body for a digit run or an email that also appears in
+     this run's testdata JSON; if one is there, rewrite it to read `ctx.values` instead.
+   - **Write the regex loose.** Prefer `(?:a|the)`, `(?:button|link|control)` and similar alternations over the
+     exact phrasing you saw. Measured across the spec corpus, wording drift is a few percent of phrasings, and
+     absorbing it in the regex costs nothing — rewriting specs to match a strict regex is churn and an auditor
+     round trip for no change in behavior.
+
+3. **Verify by re-running.** Re-run only the scenarios that use those phrasings, through Phase 2, under a fresh
+   `{run-id}` (a later `run_id` supersedes the earlier attempt for those scenarios, so the report stays right).
+
+   - All green → keep the helpers. Report the new `model_free_rate` against the old one.
+   - Any scenario that did not pass → **remove that helper** and say which one and why. A helper is an
+     optimization; one that changes a verdict is a bug, and there is no version of this worth a wrong result.
+
+   This verification is the whole point of the phase. An earlier attempt at this idea generated Playwright for
+   every feature file and never ran any of it in the session that wrote it — every artifact was a guess, and it
+   was reverted the same day. Ten helpers you re-ran are worth more than three hundred you did not.
+
+   One caution on reading the re-run. A suite driven by a model has a verdict noise floor: on a real 44-scenario
+   suite, consecutive runs with no code change between them moved about three verdicts in each direction, all on
+   model-lane steps. So a single scenario flipping is not evidence about the helper. Before blaming one, check
+   the lane of the step that actually failed — if it is `model` or `literal`, the helper was not involved.
 
 ---
 
@@ -588,6 +679,7 @@ After all phases complete, present the final summary to the operator:
 - **Pass Rate**: {pass_rate}%
 {In a Jev run, add:}
 - **Settled by Jev**: {n} · **Re-run by Claude**: {m} · **Jev cost**: ${cost}
+- **Ran without a model request**: {model_free_rate}% of steps ({steps_by_lane}) — omit this line when `model_free_rate` is null, which means no runner reported a lane
 - **Clarified for Jev**: {k} scenarios, of which Jev now settles {j}
 
 ### Files

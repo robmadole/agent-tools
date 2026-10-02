@@ -17,8 +17,13 @@ For each repair:
 1. Read the ORIGINAL spec file
 2. Read the UPDATED spec file
 3. Read the relevant source code cited in the lead's reasoning
-4. Check git history for recent changes: `git log --oneline -10 -- {relevant file}`
-5. Make an independent judgment:
+4. **Look at the failing step's screenshot if the change cites one.** The `Read` tool displays a PNG.
+   Judge the page yourself rather than taking the lead's description of it. A page that is an error,
+   an unbuilt placeholder, or simply not the page the scenario is about means the expectation was
+   never really evaluated — so a spec "update" that accommodates it is hiding a bug, not recording a
+   change. That is a `suspected_bug`, however reasonable the lead's reasoning reads
+5. Check git history for recent changes: `git log --oneline -10 -- {relevant file}`
+6. Make an independent judgment:
 
    ASK YOURSELF:
    - Does the old spec's expectation seem like correct/intended behavior?
@@ -27,7 +32,7 @@ For each repair:
    - Would a user consider the new behavior correct, or would they report it as a bug?
    - Was the spec weakened (assertions removed, expected values loosened)? This is suspicious.
 
-6. Classify your finding:
+7. Classify your finding:
    - **legitimate_update**: The repair is correct — the spec was stale, the app changed correctly
    - **suspected_bug**: The old spec was correct, the app behavior has regressed, and the repair is papering over a bug
    - **needs_operator_input**: Not enough evidence to decide — the operator should weigh in

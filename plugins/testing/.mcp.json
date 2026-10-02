@@ -5,8 +5,10 @@
       "args": [
         "@playwright/mcp@latest",
         "--isolated",
+        "--headless",
         "--ignore-https-errors",
-        "--output-dir=./browser-tests/tmp"
+        "--output-dir=./browser-tests/tmp",
+        "--init-page=${CLAUDE_PLUGIN_ROOT}/skills/browser-test/scripts/init-page.cjs"
       ]
     },
     "playwright-2": {
@@ -14,8 +16,10 @@
       "args": [
         "@playwright/mcp@latest",
         "--isolated",
+        "--headless",
         "--ignore-https-errors",
-        "--output-dir=./browser-tests/tmp"
+        "--output-dir=./browser-tests/tmp",
+        "--init-page=${CLAUDE_PLUGIN_ROOT}/skills/browser-test/scripts/init-page.cjs"
       ]
     },
     "playwright-3": {
@@ -23,8 +27,10 @@
       "args": [
         "@playwright/mcp@latest",
         "--isolated",
+        "--headless",
         "--ignore-https-errors",
-        "--output-dir=./browser-tests/tmp"
+        "--output-dir=./browser-tests/tmp",
+        "--init-page=${CLAUDE_PLUGIN_ROOT}/skills/browser-test/scripts/init-page.cjs"
       ]
     }
   }

@@ -138,6 +138,27 @@ assert.strictEqual(t.pass_rate, 40);
 assert.deepStrictEqual(t.settled_by, { jev: 1, claude: 1, ...t.settled_by });
 ok("totals, pass rate and settled_by come out of SQL, not out of counting");
 
+// --- lane: how each step got settled, and the coverage number built from it ----------------------
+// The repair re-run above recorded 4 steps with no --lane, so they must not be counted as either
+// helper or model — an unreported lane is unknown, not "needed the model".
+{
+  const before = summary().totals;
+  assert.deepStrictEqual(before.steps_by_lane, {}, "no lanes recorded yet");
+  assert.strictEqual(before.model_free_rate, null, "no lanes means no rate, not 0%");
+
+  for (const [s, lane] of [[BG[0], "helper"], [BG[1], "literal"],
+                           ['When I fill "Email" with "nobody@example.com"', "helper"],
+                           ['Then I should see "Invalid email or password"', "model"]]) {
+    record("Wrong password", s, "passed", ["--run-id", "lane-1", "--runner", "jev", "--lane", lane]);
+  }
+  const t2 = summary().totals;
+  assert.deepStrictEqual(t2.steps_by_lane, { helper: 2, literal: 1, model: 1 });
+  assert.strictEqual(t2.model_free_rate, 75, "3 of 4 settled steps needed no model request");
+  const steps = find(summary(), "Wrong password").steps;
+  assert.strictEqual(steps[0].lane, "helper", "lane is reported per step, for Phase 2c to read");
+  ok("lane records roll up into steps_by_lane and model_free_rate");
+}
+
 // --- the default summary stays small enough to read into an orchestrator's context ---------------
 const lean = JSON.parse(run(["summary", "--run", RUN]));
 const leanScenario = lean.features[0].scenarios[0];
