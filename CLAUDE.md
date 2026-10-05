@@ -23,6 +23,7 @@ The manifest schema follows `https://anthropic.com/claude-code/marketplace.schem
   - `hobgoblin` — Examine similar files for consistency violations and produce a list of differences.
 - **`quality`** — Tools for reviewing code quality.
   - `deskcheck` — Local, interactive PR review: splits a branch diff into sections and serves a web UI with resumable per-section "reviewed" state.
+  - Mod (`hooks/register.tsx`): under the prompt, shows the running deskcheck review's URL as a link and its hunks-reviewed count, polled from `server.py`'s `/api/progress`. Picks the URL up from the `Serving on` line in tool output; hides when the server stops answering.
 - **`humanity`** — Agent to human interaction, or dealing with the wetware simians who walk on two legs.
   - `whoa-hang-on` — Stop and re-align a human who has lost the thread: backtrack from the last message and explain in a ladder of short, self-contained rungs, one per message, checking understanding at each rung before continuing.
 

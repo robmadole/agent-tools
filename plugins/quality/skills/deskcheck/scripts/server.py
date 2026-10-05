@@ -247,8 +247,10 @@ def drift_watch(args, interval):
         prev = cur
 
 
-def build_page(args, con):
-    # Re-anchor per page load so a pull/rebase takes effect on refresh.
+def review_model(args):
+    """Sections (plus the synthetic _unsectioned one) and each file's hunks —
+    what the page renders and what /api/progress counts."""
+    # Re-anchor per call so a pull/rebase takes effect on refresh.
     base = merge_base(args.repo, args.target)
     Handler.base = base
     sections, paths = load_sections(args)
@@ -269,6 +271,12 @@ def build_page(args, con):
                        'Claude to re-section the review to fold them in properly.',
             'files': unsectioned,
         }]
+    all_entries = multi_file_hunks(args.repo, args.target, paths, base=base)
+    return sections, all_entries
+
+
+def build_page(args, con):
+    sections, all_entries = review_model(args)
     # per-file uncommitted state: staged (index != HEAD), edited (worktree != index)
     wip = {}
     for line in _git(args.repo, 'status', '--porcelain').splitlines():
@@ -279,7 +287,6 @@ def build_page(args, con):
         wip[p] = ('staged + edited' if staged and edited
                   else 'staged' if staged else 'edited')
 
-    all_entries = multi_file_hunks(args.repo, args.target, paths, base=base)
     files = {p: {'hash': file_hash(entries),
                  'wip': wip.get(p),
                  'hunks': [{'index': e['index'], 'id': e['id'],
@@ -311,6 +318,23 @@ def build_page(args, con):
         'diagrams': diagrams,
     }
     return render_template(data).encode()
+
+
+def review_progress(args, con):
+    """Hunks covered / total, counted like the UI's "N of M hunks reviewed":
+    a hunk is covered when it or its whole file is marked."""
+    sections, all_entries = review_model(args)
+    state = read_state(con)
+    covered = {}
+    for sec in sections['sections']:
+        picks = [(f, e) for f in sec.get('files', []) for e in all_entries.get(f, [])]
+        picks += [(x['file'], e) for x in sec.get('extra_hunks', [])
+                  for e in all_entries.get(x['file'], []) if e['index'] == x['index']]
+        for f, e in picks:
+            key = 'hunk:%s:%s' % (f, e['id'])
+            fkey = 'file:%s:%s' % (f, file_hash(all_entries[f]))
+            covered[key] = covered.get(key) or state.get(key) or state.get(fkey, False)
+    return {'reviewed': sum(covered.values()), 'total': len(covered)}
 
 
 def render_template(data):
@@ -673,6 +697,9 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, body, ctype)
         elif url.path == '/api/state':
             self._send(200, json.dumps(read_state(self.con)).encode(),
+                       'application/json')
+        elif url.path == '/api/progress':
+            self._send(200, json.dumps(review_progress(self.args, self.con)).encode(),
                        'application/json')
         elif url.path == '/api/comments-rev':
             cpath = Path(self.args.workspace) / 'comments.json'

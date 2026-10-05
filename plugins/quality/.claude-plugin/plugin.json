@@ -1,8 +1,9 @@
 {
   "name": "quality",
   "description": "Tools for reviewing code quality",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "author": {
     "name": "Rob Madole"
-  }
+  },
+  "types": "./types/index.d.ts"
 }
