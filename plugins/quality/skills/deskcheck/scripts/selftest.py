@@ -102,6 +102,10 @@ def main():
         urllib.request.urlopen(f'http://127.0.0.1:{port}/api/state').read())
     assert state[hunk_key] is True, state
 
+    prog = json.loads(
+        urllib.request.urlopen(f'http://127.0.0.1:{port}/api/progress').read())
+    assert prog == {'reviewed': 1, 'total': len(hunks)}, prog
+
     row = sqlite3.connect(ws / 'review.db').execute(
         'SELECT reviewed FROM reviews WHERE item_key=?', (hunk_key,)).fetchone()
     assert row == (1,), row
