@@ -1,7 +1,7 @@
 ---
 name: browser-test
-description: "Orchestrate QA browser testing via Gherkin specs and Playwright, with an optional fast Jev runner and project step helpers that run without a model request."
-version: 2.4.0
+description: "Orchestrate QA browser testing via Gherkin specs and Playwright, with opt-in focus checks (accessibility, responsive design), an optional fast Jev runner, and project step helpers that run without a model request."
+version: 2.5.0
 ---
 
 # Browser Test — QA Testing with Gherkin Specs
@@ -11,6 +11,8 @@ You orchestrate a multi-phase QA browser testing workflow. You generate Gherkin 
 You perform all roles directly — spec generation, reporting, gap analysis — and use **subagents only for concurrent test execution** (up to 3 Playwright instances in parallel).
 
 When `.browser-tests.json` sets `"runner": "jev"`, execution starts with `scripts/jev-run.js`, a script that drives the browser with TypeSafe's Jev model instead of a Claude subagent. It is several times faster and uses no Claude tokens. Scenarios it can't settle fall back to the Claude subagents.
+
+Before any test runs, the operator can opt into **foci**: extra disciplines, such as accessibility or responsive design, checked by replaying every scenario after the functional run. Each focus is a file in `foci/`. The replay also gives every scenario a second attempt, and scenarios whose attempts disagree for no reason anyone found are marked **flaky**. See Setup step 0c, Phase 2d and Phase 2e.
 
 Underneath both runners sits `{directory}/playwright-helpers.js`: step phrasings mapped to Playwright code that runs with no model request at all. The Jev runner loads it with `--helpers`, the Claude runner calls it through `page.__runStep`, and it is the same function in both. A helper that can't settle a step defers to the model rather than failing it, so the file is only ever an optimization — see Phase 2c, which grows it from what a run actually spent requests on.
 
@@ -35,9 +37,24 @@ Before proceeding, verify all of the following. If any check fails, stop immedia
    - From the project's `.mcp.json`, they are `mcp__playwright-1__browser_navigate`, so the prefix is `mcp__playwright-1__`.
    - Other hosts may name them differently again.
 
-   Look through the tools you have for names ending in `__browser_navigate`. If none are listed, they may be deferred: find them with ToolSearch (query `+playwright browser_navigate`, `max_results` 10). You need three distinct prefixes, one per instance. Record them in order; they become `{playwright tool prefix}` for the runner subagents.
+   Look through the tools you have for names ending in `__browser_navigate`. If none are listed, they may be deferred: find them with ToolSearch, one search per instance (queries `+playwright-1 browser_navigate`, `+playwright-2 browser_navigate`, `+playwright-3 browser_navigate`, `max_results` 3 each), in one turn. A single `+playwright` search fills its result cap with one server's tools and can't show whether the others exist. Any tool returned for an instance proves it exists; its prefix is everything before `browser_`. You need three distinct prefixes, one per instance. Record them in order; they become `{playwright tool prefix}` for the runner subagents.
 
    **If fewer than three respond**, work with what you have rather than stopping — an instance can drop mid-session. Tell the operator how many you found, and reduce the batch size in Phase 2 to that number, running feature files in sequence on the instances that answer. Stop only when none respond.
+
+   The three instances need distinct command lines. Claude Code drops a plugin MCP server whose command line matches an earlier one ("Suppressing plugin MCP server … duplicates earlier plugin server"), so with identical args only `playwright-1` would come up. That is the only job of `--profile-dir-name=playwright-N` in the plugin's `.mcp.json`: Playwright MCP reads it only with `--extension`, so under `--isolated` it does nothing. Don't remove it.
+
+   **Check the helper bridge** on the first instance, passing the project root (the absolute path of the directory holding `.browser-tests.json`):
+
+   ```
+   {prefix}browser_run_code_unsafe with code:
+   async (page) => { if (typeof page.__runStep !== "function") return null; await page.__runStep("", { root: "<project root>" }); return page.__helpers; }
+   ```
+
+   - `null`: the bridge isn't loaded. The servers in use were started without `--init-page`, usually because another plugin or the project's own `.mcp.json` defines servers with the same names and won. Warn the operator, then carry on: every step goes to the model, so the run costs more and takes longer.
+     > The Playwright helper bridge isn't loaded: `page.__runStep` is missing, so every step will go to the model. Check that the Playwright servers in use are the testing plugin's (another plugin or the project's `.mcp.json` may define `playwright-1..3` too).
+   - `loaded: false`, or a `reason`: the bridge is there but broken. Show the `reason` to the operator and carry on.
+   - `config: false`: no `.browser-tests.json` at that root. Check the path you passed.
+   - Otherwise say nothing. `project` is how many project helpers loaded, and 0 is normal for a project that has none yet.
 
    > This skill requires 3 Playwright MCP server instances (playwright-1, playwright-2, playwright-3), which the testing plugin configures in its `.mcp.json`. Ensure the `@playwright/mcp` package is available and all three servers are running.
 
@@ -121,6 +138,40 @@ Whatever they pick, **steps are always recorded.** Recording is what makes the p
 deterministic rather than something you tally by hand, and `report summary` is the source for both
 report formats. The `"visual"` choice only decides whether screenshots are captured alongside.
 
+### 0c. Choose foci
+
+A focus is a discipline the run checks on top of the specs, such as accessibility or responsive design. It
+leans on what Chromium and mature tools already do (axe-core, device emulation), driven through Playwright
+MCP. Each one is a file in `foci/` in this skill's directory. Adding a focus means adding a file.
+
+Ask on **every** run, Create or Run mode, before any test runs. Never carry an answer over from an earlier run
+or infer one from `.browser-tests.json`.
+
+1. List `{absolute path to this skill}/foci/*.md`. The `vendor/` directory under it holds no foci. Read each
+   file's frontmatter: `name`, `label`, `description`.
+2. Ask with one `AskUserQuestion` call, `multiSelect: true`:
+   - question: "Run any focus checks too? They replay every scenario after the functional run, so the run takes longer."
+   - header: "Foci"
+   - first option: label "Nothing extra", description "Functional run only. No replay, no focus checks."
+     The UI warns when a multiSelect is submitted with nothing checked, so the operator needs an explicit way
+     to say no.
+   - then one option per focus: its `label`, with its `description`
+   - Nothing starts checked; that is how multiSelect works, and it is the point. A focus runs only when the
+     operator checks it.
+   - An `AskUserQuestion` question holds at most 4 options, and "Nothing extra" takes one. With more than 3
+     foci, put "Nothing extra" and the first 3 in the first question, and the rest in further questions of up
+     to 4 in the same call, each with question "More focus checks?" and header "Foci (cont.)".
+3. A dismissed question is not an answer. Ask again, once, with the same `AskUserQuestion`. If it is dismissed
+   a second time, stop and ask in plain text which foci to run.
+   "Nothing extra", nothing checked, or an "Other" answer that names no focus all mean no foci this run. If
+   "Nothing extra" is checked along with a focus, run the checked focus and say so in one line: checking a
+   focus is the deliberate act.
+4. When **any** focus is checked:
+   - **Force the Claude runner for the whole run**, whatever `runner` says. Say so in one line if the config
+     says `jev`. Focus checks drive Playwright MCP tools that only the Claude runner has, and a flake
+     comparison between two different runners would compare the runners, not the app.
+   - Keep the chosen files' `name`s. Phase 2d uses them.
+
 ### 1. What to test
 
 If we are in "Run" mode and we weren't given the tests to run in $ARGUMENTS, ask the operator now.
@@ -155,15 +206,34 @@ It sits inside the project on purpose. Playwright MCP servers refuse to write ou
 
 It must be gitignored. Check with `git check-ignore -q {directory}/tmp`; if that exits non-zero, append `{directory}/tmp/` to the project's `.gitignore` and tell the operator you did.
 
-Then settle the run number and the run directory, which every later phase refers to. List
-`{directory}/results/` and take the highest existing run number plus one (start at 1 if empty).
+Then claim the run number and the run directory, which every later phase refers to:
+
+```bash
+bun {absolute path to this skill}/scripts/report.js claim --dir {directory}
+```
+
+It prints `{"n": N, "run": "<run dir>"}`. It takes one past the highest number in `{directory}/results/` and
+`{directory}/tmp/`, and creates the run directory in the same step, so a second run started on the same branch
+gets its own number. Never pick the number by listing `results/` yourself: reports are written at the end of a
+run, so two runs started together used to land on the same `run.db`.
 That number `{N}` fixes two paths for the rest of this skill:
 
 - `{run dir}` — `{directory}/tmp/run-{N}`, holding `run.db`, the deterministic record of this run
 - the report filenames in Phase 3
 
-One `{run dir}` covers the whole run: the Jev pass, the Claude fallback, Phase 2b re-runs and
-Phase 4 gap specs all record into the same database, each under its own `--run-id`.
+One `{run dir}` covers the whole run: the Jev pass, the Claude fallback, Phase 2b re-runs, the Phase 2d focus
+pass and Phase 4 gap specs all record into the same database, each under its own `--run-id`.
+
+`run.db` is also where the run's live status is read from, by the operator's status band and anything else
+watching. Steps record themselves, but the phases between them don't, so you mark each phase as you enter it:
+
+```bash
+bun {absolute path to this skill}/scripts/report.js phase --run {run dir} --name {phase}
+```
+
+`{phase}` is one of `specs`, `execute`, `repair`, `helpers`, `focus`, `flaky`, `report`, `gaps`, `done`. Each
+phase below opens with its own line saying which. The first one creates `run.db`, so it works before `init`.
+Mark a phase only when you actually run it; a skipped phase gets no marker.
 
 Then record the pre-run baseline of untracked files — you will diff against it during Cleanup to catch any temp files that leak into the repo:
 
@@ -189,6 +259,8 @@ Store this context — in Create mode you will use it for spec generation, in Ru
 ## Phase 1 — Spec Generation (Create mode only)
 
 If in "Run" mode, skip to Phase 2.
+
+Mark the phase: `report.js phase --run {run dir} --name specs`.
 
 Read `references/gherkin-guide.md` before generating any specs.
 
@@ -216,6 +288,9 @@ Analyze the gathered context and generate Gherkin `.feature` files:
 ## Phase 2 — Test Execution
 
 Execute the spec files using concurrent subagents with Playwright MCP. When `runner` is `jev`, run the Jev pass first; only the scenarios it leaves over go to the subagents.
+
+Mark the phase: `report.js phase --run {run dir} --name execute`. Only on the first pass. A re-run from Phase
+2b or Phase 4 stays under `repair` or `gaps`; its `--run-id` already says it is executing.
 
 ### Determine files to run
 
@@ -277,7 +352,7 @@ If no `testdata:` lines are present, proceed normally.
 
 ### Jev pass (when `runner` is `jev`)
 
-Skip this section when `runner` is `claude` or unset.
+Skip this section when `runner` is `claude` or unset, or when the operator chose any focus in Setup step 0c.
 
 1. **Write the inputs.** Use the Write tool, not the shell.
    - Once per run, when `jev.routes` is set, write `jev.routes` to `{directory}/tmp/jev/routes.json`.
@@ -312,17 +387,47 @@ There are 3 Playwright MCP server instances available, whose tool prefixes you r
 
 1. Batch the files into groups of up to 3
 2. For each batch, spawn up to 3 `Agent` subagents **concurrently** (in a single message with multiple tool calls)
-3. Assign each subagent a distinct instance: the 1st, 2nd, and 3rd tool prefix you recorded
-4. For each subagent: read `references/runner-prompt.md` and substitute the template variables:
-   - `{base URL}` — from configuration
-   - `{file path}` — the feature file to execute
-   - `{directory}` — the `directory` from configuration, so the runner writes its scratch files to the gitignored `{directory}/tmp/`
-   - `{playwright tool prefix}` — the assigned instance's full tool prefix, including the trailing `__` (e.g. `mcp__plugin_testing_playwright-1__`)
-   - `{further setup}` — the furtherSetup content (or empty if not set)
-   - `{testdata context}` — if this file had `testdata:` directives, include the resolved data (IDs, credentials, etc.) as a "TEST DATA" block the runner can reference when interpreting steps. If no `testdata:` directives were present, substitute with empty string.
-   - `{verification tools}` — the `verificationTools` list from configuration, formatted as a bullet per tool. If unset or empty, substitute with empty string.
-   - `{helper context}` — a JSON object literal the runner pastes into its `page.__runStep` calls: `{"base": "<base URL>", "values": {<this feature's resolved testdata, flattened>}}`. Use the values from the testdata pass that ran **for this dispatch** — on a Jev run the testdata was re-run before the fallback, so the Jev pass's values are stale and would point the runner at records that no longer exist. With no testdata, `{"base": "<base URL>", "values": {}}`.
-   - `{scenarios}` — in a Jev run, the leftover scenario names from that file, one bullet each. Otherwise, substitute with an empty string, which runs every scenario.
+3. Each subagent gets a distinct instance: the 1st, 2nd, and 3rd tool prefix you recorded
+4. **Write the runner instructions once per pass**, before the first batch, not into every dispatch:
+
+   ```bash
+   bun {absolute path to this skill}/scripts/report.js runner --run {run dir} --pass functional --config .browser-tests.json --shots
+   ```
+
+   Pass `--shots` only when `reports` includes `"visual"`. It writes `{run dir}/runner-functional.md`, used here
+   and by the Phase 2b re-runs and Phase 4, and prints its absolute path as `file`. Phase 2d writes
+   `runner-focus.md` the same way. The command fills in everything every runner in the pass shares: the base
+   URL, `directory`, the `furtherSetup` file, `verificationTools`, the screenshot instructions
+   (`references/screenshot-instructions.md`), and in the focus pass the focus checks. It leaves the per-runner
+   placeholders in braces: `{file path}`, `{playwright tool prefix}`, `{scenarios}`, `{testdata context}`,
+   `{helper context}`, `{report command}` and `{finding command}`. `unfilled` in its output should be empty.
+
+   Don't write this file yourself. Agents in one message only start once the whole message is written, and
+   pasting the template into each of three prompts kept agents from starting for minutes. Copying it through a
+   Write call is the same wait once per pass, plus the chance of mangling the template on the way.
+
+5. **Dispatch each runner with a short prompt.** Assign each subagent a distinct instance (the 1st, 2nd and
+   3rd tool prefix you recorded) and send only this, filled in:
+
+   ```
+   You are a browser test runner. Before doing anything else, read {absolute path of the runner file} in full
+   with the Read tool, and follow it. Wherever it has one of the placeholders below in braces, use this
+   runner's value:
+
+   - {file path}: <the feature file to execute>
+   - {playwright tool prefix}: <the assigned instance's full tool prefix, including the trailing __>
+   - {report command}: <see below>
+   - {helper context}: <see below>
+   - {scenarios}: <see below, or "(empty: run every scenario)">
+   - {testdata context}: <see below, or "(none)">
+   - {finding command}: <focus pass only, see Phase 2d>
+   ```
+
+   The per-runner values:
+   - `{playwright tool prefix}` — e.g. `mcp__plugin_testing_playwright-1__`
+   - `{testdata context}` — if this file had `testdata:` directives, the resolved data (IDs, credentials, etc.) as a "TEST DATA" block the runner can reference when interpreting steps. Otherwise "(none)".
+   - `{helper context}` — a JSON object literal the runner pastes into its `page.__runStep` calls: `{"root": "<project root>", "base": "<base URL>", "values": {<this feature's resolved testdata, flattened>}}`. Use the values from the testdata pass that ran **for this dispatch** — on a Jev run the testdata was re-run before the fallback, so the Jev pass's values are stale and would point the runner at records that no longer exist. With no testdata, `{"root": "<project root>", "base": "<base URL>", "values": {}}`. `root` is the absolute path of the directory holding `.browser-tests.json`: each runner gets a fresh tab, and the bridge in that tab finds the project's helpers from the server's working directory, which isn't always the project.
+   - `{scenarios}` — in a Jev run, the leftover scenario names from that file, one bullet each. Otherwise empty, which runs every scenario.
    - `{report command}` — the record command with everything the runner doesn't vary already baked in:
 
      ```
@@ -331,31 +436,10 @@ There are 3 Playwright MCP server instances available, whose tool prefixes you r
 
      The runner appends `--scenario`, `--step`, `--status`, `--lane` and (on failure) `--reason`. Keeping the
      paths out of the runner's hands is what stops it from inventing them.
-   - `{screenshot instructions}` — when `reports` includes `"visual"`, substitute:
 
-     ```
-     Before each `record` call, capture the page and attach it:
-
-     1. `{playwright tool prefix}browser_take_screenshot` with `type: "png"`, `scale: "css"`, and
-        `filename: "{run dir}/shots/<slug>-<n>.png"`
-     2. add `--screenshot {run dir}/shots/<slug>-<n>.png` to the record command
-
-     `<slug>` is the scenario name lowercased with every run of non-alphanumeric characters replaced
-     by a single hyphen. `<n>` counts the steps you run in that scenario from 1, Background steps
-     included — it only has to make the filename unique, nothing reads it back.
-
-     Screenshot **every** step, including assertion steps whose page looks identical to the step
-     before. A filmstrip with holes in it is worse than one with repeated frames, and a missing
-     screenshot is indistinguishable from a step you never ran.
-
-     Use `png` and `scale: "css"`, not `webp` or `device`. PNG is lossless — designers open these
-     at full size to check pixels — and on flat UI screenshots it is also the smaller file.
-     ```
-
-     When `reports` does not include `"visual"`, substitute with an empty string. The runner then
-     records steps without screenshots, which still produces correct counts and a markdown report.
-5. Wait for all subagents in the batch to complete before starting the next batch
-6. Collect JSON results from all subagents
+   Spawn the batch's subagents in one message, so they run concurrently.
+6. Wait for all subagents in the batch to complete before starting the next batch
+7. Collect JSON results from all subagents
 
 ### Result assembly
 
@@ -389,12 +473,17 @@ A scenario's verdict is derived, never reported by a runner:
 Still collect from the subagents' JSON the things the database does not hold: `difficulties` and
 `interpretations`, each with `feature_file` added.
 
+The summary also lists `inconsistent` scenarios: ones where two attempts at the same spec got different
+verdicts. Phase 2e deals with them; nothing here does.
+
 If there are **any** failures, `incomplete` or `not_run` scenarios, or any `interpretations` or Jev
-leftovers to clarify, proceed to Phase 2b. Otherwise skip to Phase 3.
+leftovers to clarify, proceed to Phase 2b. Otherwise continue with Phases 2c, 2d and 2e in order. Each one opens by saying when it applies; skip any that doesn't. Then Phase 3.
 
 ---
 
 ## Phase 2b — Spec Repair
+
+Mark the phase: `report.js phase --run {run dir} --name repair`.
 
 ### Repair analysis
 
@@ -437,8 +526,8 @@ stopped, and the step it stopped on is the evidence:
   file before concluding anything about it.
 
 Do not repair the spec of an `incomplete` scenario on the strength of a guess about what the
-un-run steps would have done. Re-run it first; a scenario that completes on the second attempt was
-flaky, which is itself worth telling the operator.
+un-run steps would have done. Re-run it first. A scenario that completes on the second attempt shows up
+as `inconsistent` in the summary, and Phase 2e decides whether it is flaky.
 
 ### Background failures
 
@@ -469,6 +558,10 @@ For each one, make explicit in the `.feature` file what the runner had to work o
 - **Values:** replace a described value with the concrete, quoted value the runner used.
   - `with valid credentials` becomes separate steps with the quoted email and password of the seeded account from `furtherSetup`.
   - For an input meant to be invalid, quote an invalid value, e.g. `"nobody@example.com"` and `"wrong-password"`.
+  - Leave a reference to `testdata:` output alone (`the test identity email`, `the listed address`). Its value
+    is new on every run, so quoting this run's value would break the next one. If the runner resolved it
+    unaided, nothing needs clarifying. If it needed a model request to resolve it, note the step as a Phase 2c
+    helper candidate instead.
 - **Elements:** name them by their current accessible name, quoted. `When I click the search box` becomes `When I click the "Search the v7 Icons" field`.
   - If the element no longer exists (the UI changed), that is a STALE SPEC, not a clarification.
 - **Compound steps:** split them so each step is one action. `Given I am on the "Sign In" page and enter invalid credentials` becomes two or more steps.
@@ -525,9 +618,9 @@ After receiving audit findings:
    - For rejected repairs (keep original): Revert the spec file to its original content
    - Re-run ONLY the repaired spec files through Phase 2 to verify the fixes work
    - In a Jev run, re-run files that were only clarified through the Jev runner alone, with no Claude fallback: Claude already gave their verdicts this run. Report how many of their scenarios Jev now settles.
-   - After the re-run, proceed to Phase 3
+   - After the re-run, continue with Phases 2c, 2d and 2e in order. Each one opens by saying when it applies; skip any that doesn't. Then Phase 3.
 
-If there were **no suspected bugs** from either the repair analysis or the auditor and all repairs were legitimate, re-run the repaired specs through Phase 2 (and clarified-only files through the Jev runner alone, as above), then proceed to Phase 3.
+If there were **no suspected bugs** from either the repair analysis or the auditor and all repairs were legitimate, re-run the repaired specs through Phase 2 (and clarified-only files through the Jev runner alone, as above), then continue with Phases 2c, 2d and 2e in order. Each one opens by saying when it applies; skip any that doesn't. Then Phase 3.
 
 ---
 
@@ -535,6 +628,8 @@ If there were **no suspected bugs** from either the repair analysis or the audit
 
 Only when the run is otherwise settled: no `failed`, `incomplete` or `not_run` scenarios left. A helper written
 against a broken page bakes in the breakage.
+
+Mark the phase: `report.js phase --run {run dir} --name helpers`.
 
 `{directory}/playwright-helpers.js` maps step phrasings to Playwright code. Both runners load it — the Jev
 runner through `--helpers`, the Claude runner through `page.__runStep` — so a helper added here stops costing
@@ -600,7 +695,106 @@ a model request in either. It grows from what the run actually spent requests on
 
 ---
 
+## Phase 2d — Focus pass
+
+Only when the operator chose at least one focus in Setup step 0c. It runs after Phase 2b and 2c, so it
+replays the specs as they ended up after repair.
+
+Mark the phase: `report.js phase --run {run dir} --name focus`.
+
+The pass replays **every** scenario, start to finish, with the chosen foci checked at each transition. It
+does two jobs at once: the focus findings, and a second, independent attempt at every scenario with fresh
+test data, which is what Phase 2e reads to find flaky ones.
+
+1. **Pick the run-id** `focus-1`. A re-dispatch of a feature that failed to start takes `focus-2`, and so on.
+2. **Make the focus directory** where runners write axe results and screenshots:
+
+   ```bash
+   mkdir -p {run dir}/focus
+   ```
+
+3. **Run the testdata again.** Process every feature's `testdata:` directives exactly as in Phase 2, fresh.
+   The functional pass changed the data its scenarios touched. The focus pass starts from new data, as the
+   Jev fallback does.
+4. **Write the focus pass's runner file** with the chosen foci's `name`s, in the order the operator's answer
+   listed them:
+
+   ```bash
+   bun {absolute path to this skill}/scripts/report.js runner --run {run dir} --pass focus --config .browser-tests.json --foci {names, comma-separated}
+   ```
+
+   It leaves the screenshot instructions out (the focus pass screenshots failed steps only, and
+   `references/focus-pass.md` says how). It puts in `references/focus-pass.md` followed by each focus file's
+   body, with `{focus dir}` (the absolute path of `{run dir}/focus`, which it creates) and `{axe path}` filled in.
+
+5. **Dispatch** exactly as in "Concurrent execution via subagents", one subagent per feature file, every
+   scenario (`{scenarios}` empty), pointing at `runner-focus.md`, with these per-runner values:
+   - `{report command}` — the record command with the focus pass marked:
+
+     ```
+     bun {absolute path to this skill}/scripts/report.js record --run {run dir} --run-id {run-id} --pass focus --feature {file path}
+     ```
+
+   - `{finding command}` — the finding command with everything the runner doesn't vary baked in:
+
+     ```
+     bun {absolute path to this skill}/scripts/report.js finding --run {run dir} --run-id {run-id} --feature {file path}
+     ```
+
+6. **Collect** the subagents' `difficulties`, labeled as focus pass. A difficulty about a focus check is about
+   the focus file, not the spec. Keep those apart from spec difficulties in the report.
+
+Findings never change a verdict, and the focus pass's step records never do either: `report summary` takes
+verdicts from functional attempts only.
+
+---
+
+## Phase 2e — Flaky review
+
+Run this whenever `report summary` lists `inconsistent` scenarios with `flaky: null`. That happens after a
+Phase 2d focus pass, and also after a Phase 2b or 2c re-run that came out differently with the same spec.
+
+Mark the phase: `report.js phase --run {run dir} --name flaky`.
+
+An inconsistent scenario is one where two attempts at the same spec, by the same runner, got different
+verdicts. `report summary` already leaves out the disagreements that are expected: an attempt on step text
+the spec no longer has (it was repaired in between), and a Jev leftover that Claude then passed.
+
+Flaky is a call, not arithmetic. It flags a scenario for a person or agent to spend time on, so be reasonably
+sure something is off before setting it. It is a signal, never a gate: a flaky scenario keeps its functional
+verdict.
+
+For each one:
+
+1. **Look at both attempts.** Every entry carries its `attempts`, each with its `pass`, `verdict`,
+   `failed_step` and `failure_reason`. Read the failing attempt's screenshot:
+   - functional pass: `{run dir}/shots/<slug>-<n>.png`
+   - focus pass: `{run dir}/focus/<slug>-<n>.png`
+
+   Compare it with the same step in the attempt that passed. Don't re-run to break the tie.
+2. **Decide**, and record it:
+
+   | What you found | Verdict |
+   |---|---|
+   | A cause you found and fixed (a testdata collision, a missing wait, a helper Phase 2c removed) | `--flaky false`, with the cause as the reason |
+   | A focus check left the page in another state (still emulated, focus moved) | `--flaky false`, with "focus check side effect: …" as the reason. Note it as a difficulty: the focus file has a bug |
+   | Anything else: you don't know why, or you know why and didn't fix it (environment, timing in the app) | `--flaky true`, with whatever you do know as the reason |
+
+   ```bash
+   bun {absolute path to this skill}/scripts/report.js flag --run {run dir} --feature {file path} --scenario '<scenario>' --flaky true --reason '<why>'
+   ```
+
+   One `flag` per Bash call. Single-quote `--scenario` and `--reason`.
+
+A model-driven runner has a verdict noise floor (see Phase 2c): a few flips per run with no code change are
+normal. That doesn't make them not flaky. Unexplained is flaky. It does mean one flip isn't evidence about the
+app on its own. Say what you saw, not more.
+
+---
+
 ## Phase 3 — Reporting
+
+Mark the phase: `report.js phase --run {run dir} --name report`.
 
 Produce whichever reports the operator chose in Setup step 0b. Run `report summary` first and take
 every count from it — the totals in both formats must come from the same reconciled source.
@@ -613,6 +807,8 @@ Read `references/report-template.md` and create (or update) the test report foll
 - For subsequent runs (repair re-runs, gap specs), append to the same report file and update the cumulative summary
 - Give `incomplete` and `not_run` scenarios their own section. They are not failures and not passes,
   and a table that only has ✅/❌/⏭️ columns will quietly misfile them
+- Flaky scenarios and focus findings get their own sections. Take the findings from `report summary --steps`:
+  the default summary trims each finding to its first three occurrences
 
 ### Visual (when `reports` includes `"visual"`)
 
@@ -630,6 +826,8 @@ it — `gzip -9` recovers essentially all of the base64 overhead.
 ---
 
 ## Phase 4 — Gap Analysis
+
+Mark the phase: `report.js phase --run {run dir} --name gaps`.
 
 Analyze the test results and existing specs to identify testing gaps:
 
@@ -677,6 +875,9 @@ After all phases complete, present the final summary to the operator:
 - **Failed**: {failed} ❌
 - **Did not finish**: {incomplete + not_run} ⚠️  {omit this line when both are 0}
 - **Pass Rate**: {pass_rate}%
+- **Flaky**: {flaky} — omit when 0. Name them, with each reason
+{When a focus ran, one line per focus, from `findings.by_focus`:}
+- **{Focus}**: {critical} critical · {serious} serious · {moderate} moderate · {minor} minor
 {In a Jev run, add:}
 - **Settled by Jev**: {n} · **Re-run by Claude**: {m} · **Jev cost**: ${cost}
 - **Ran without a model request**: {model_free_rate}% of steps ({steps_by_lane}) — omit this line when `model_free_rate` is null, which means no runner reported a lane
@@ -716,7 +917,7 @@ pass rate looks. You do not know what those scenarios would have done.
 After all phases are complete and the Presentation has been shown, validate every spec file in `{directory}/specs/` using the validation script:
 
 ```bash
-bun {absolute path to this skill}/scripts/validate.js $(find {directory}/specs -name '*.feature')
+bun {absolute path to this skill}/scripts/validate.js {directory}/specs
 ```
 
 - If any files fail validation, read the file, fix common issues (missing Feature keyword, malformed tables, indentation), and re-validate.
@@ -733,6 +934,8 @@ After Final Validation, verify no temporary files from this run leaked into the 
 2. Any **new** untracked file that is not under `{directory}/` is a stray test artifact (runner screenshots, test fixtures). Delete each one with its own `rm` call, per the Bash discipline rules.
 3. Files under `{directory}/` (specs, results) are expected outputs — leave them alone. If a new file outside `{directory}/` doesn't look like a test artifact (not a screenshot/fixture, or you can't explain where it came from), ask the operator instead of deleting it.
 4. Tell the operator what was removed, if anything.
+5. Mark the run finished: `report.js phase --run {run dir} --name done`. Without it, a finished run and an
+   abandoned one look the same to anything reading `run.db`.
 
 ---
 

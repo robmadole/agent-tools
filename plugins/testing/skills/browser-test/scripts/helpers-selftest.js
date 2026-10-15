@@ -96,6 +96,63 @@ await check("custom combobox defers", 'When I select "Pro" from the "Tier" dropd
     m.insertAdjacentHTML("beforeend", '<div role="combobox" aria-label="Tier">Free</div>');
   }));
 
+// Plain text and URL assertions. "Sign in" is both the heading and the button, so "see" also proves that several
+// matches are fine; "not see" on text that is visible has to defer, never pass.
+await check("text is visible", 'Then I should see "Sign in"', true);
+await check("text is hidden", 'Then I should not see "Invalid email or password"', true);
+await check("text is absent", 'Then I should not see the text "Nothing like this"', true);
+await check("visible text defers a not-see", 'Then I should not see "Sign in"', false);
+await check("missing text defers a see", 'Then I should see "Nothing like this" on the page', false);
+await check("URL contains", 'Then the URL should contain "app.html"', true);
+await check("URL does not contain", 'Then the URL should not contain "dashboard"', true);
+await check("URL contains defers when it doesn't", 'Then the current URL should not contain "app.html"', false);
+
+// Two links with one name and one href are one destination, so the first one is clicked. Two with different
+// hrefs stay a defer.
+await check("same-href links click the first", 'When I click the "Sign up" link', true, () =>
+  page.evaluate(() => document.querySelectorAll("main")[0].insertAdjacentHTML("beforeend",
+    '<a href="#join">Sign up</a><a href="#join">Sign up</a>')));
+assert.ok(page.url().endsWith("#join"), "and the click happened");
+await check("different-href links defer", 'When I click the "Sign up" link', false, () =>
+  page.evaluate(() => document.querySelectorAll("main")[0].insertAdjacentHTML("beforeend",
+    '<a href="#join">Sign up</a><a href="#other">Sign up</a>')));
+await check("a navigating click counts", 'When I click the "Elsewhere" link', true, () =>
+  page.evaluate(() => document.querySelectorAll("main")[0].insertAdjacentHTML("beforeend",
+    '<a href="/dashboard">Elsewhere</a>')));
+assert.ok(page.url().endsWith("/dashboard"), "and it navigated");
+n += 2;
+
+// Review findings: placeholder hrefs are many actions, not one place; text matches stand as words; and a click
+// that an overlay blocks stays a defer even if an SPA changed the URL meanwhile.
+await check("placeholder-href links defer", 'When I click the "Delete" link', false, () =>
+  page.evaluate(() => document.querySelectorAll("main")[0].insertAdjacentHTML("beforeend",
+    '<a href="#">Delete</a><a href="#">Delete</a>')));
+await check("a word inside a longer word is not seen", 'Then I should see "Saved"', false, () =>
+  page.evaluate(() => document.querySelectorAll("main")[0].insertAdjacentHTML("beforeend", "<p>Unsaved changes</p>")));
+await check("a number inside a bigger one is not seen", 'Then I should see "1 item"', false, () =>
+  page.evaluate(() => document.querySelectorAll("main")[0].insertAdjacentHTML("beforeend", "<p>11 items</p>")));
+await check("a phrase inside a sentence is seen", 'Then I should see "changes"', true, () =>
+  page.evaluate(() => document.querySelectorAll("main")[0].insertAdjacentHTML("beforeend", "<p>Unsaved changes here</p>")));
+await check("a blocked click defers despite pushState", 'When I click the "Sign in" button', false, () =>
+  page.evaluate(() => {
+    document.body.insertAdjacentHTML("beforeend",
+      '<div style="position:fixed;inset:0;background:rgba(0,0,0,.1);z-index:9"></div>');
+    setTimeout(() => history.pushState({}, "", "#spa"), 300);
+  }));
+
+// A click whose effect lands after a round trip (LiveView push_navigate, SPA routing) returns only once the
+// page has changed, so the next step sees the new page.
+await check("a click waits for a delayed DOM swap", 'When I click the "Sign in" button', true, () =>
+  page.evaluate(() => {
+    const btn = document.querySelector("main button");
+    btn.closest("form").onsubmit = (e) => {
+      e.preventDefault();
+      setTimeout(() => { history.pushState({}, "", "/sites"); document.querySelectorAll("main")[0].innerHTML = "<h1>Sites</h1><p>Site created</p>"; }, 400);
+    };
+  }));
+assert.ok(await page.getByText("Site created").isVisible(), "the swapped-in page is there when the click returns");
+n++;
+
 // A miss must be cheap. Candidates are unioned with .or() and gated behind an instant count(), so a step whose
 // element isn't there defers in milliseconds. Try the candidates in sequence with a timeout each instead and
 // every step headed for the model gets seconds slower — the regression this guards against.

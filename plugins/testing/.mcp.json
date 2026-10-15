@@ -4,6 +4,7 @@
       "command": "npx",
       "args": [
         "@playwright/mcp@latest",
+        "--profile-dir-name=playwright-1",
         "--isolated",
         "--headless",
         "--ignore-https-errors",
@@ -15,6 +16,7 @@
       "command": "npx",
       "args": [
         "@playwright/mcp@latest",
+        "--profile-dir-name=playwright-2",
         "--isolated",
         "--headless",
         "--ignore-https-errors",
@@ -26,6 +28,7 @@
       "command": "npx",
       "args": [
         "@playwright/mcp@latest",
+        "--profile-dir-name=playwright-3",
         "--isolated",
         "--headless",
         "--ignore-https-errors",

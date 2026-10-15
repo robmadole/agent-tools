@@ -9,7 +9,9 @@
     --bg: #0D1117; --surface: #161B22; --surface2: #1B2231; --border: #2A3140;
     --tp: #E6EDF3; --ts: #8B98A9; --tm: #5E6B7C;
     --passed: #3FB950; --failed: #F85149; --incomplete: #D29922; --not_run: #5E6B7C;
-    --jev: #A371F7; --claude: #E08C4F;
+    --jev: #A371F7; --claude: #E08C4F; --flaky: #DB61A2;
+    /* axe-core's impact levels, used by every focus */
+    --critical: #F85149; --serious: #F0883E; --moderate: #D29922; --minor: #8B98A9;
     --mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, monospace;
     --sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   }
@@ -40,6 +42,9 @@
   .banner { margin: 22px 36px -4px; padding: 16px 18px; border-radius: 9px; font-size: 13px;
             background: #2A1F0C; border: 1px solid #5C4410; color: #EFCE7B; }
   .banner.cluster { background: #2B1517; border-color: #5C2327; color: #F0A6A3; }
+  .banner.flaky { background: #2C1524; border-color: #5C2348; color: #F2A7CF; }
+  .banner a, a.chip { color: inherit; }
+  a.chip { text-decoration: none; }
   .banner b { color: inherit; }
   .banner ul { margin: 9px 0 0; padding-left: 20px; line-height: 1.7; }
 
@@ -72,6 +77,9 @@
   .badge.jev { background: #291E44; color: var(--jev); }
   .badge.claude { background: #3B2818; color: var(--claude); }
   .badge.verdict { background: color-mix(in srgb, var(--v) 16%, transparent); color: var(--v); }
+  .badge.flaky { background: color-mix(in srgb, var(--flaky) 16%, transparent); color: var(--flaky); }
+  .badge.impact { background: color-mix(in srgb, var(--imp) 16%, transparent); color: var(--imp); }
+  .badge.source { background: var(--surface2); color: var(--ts); }
   .dur { font: 11.5px var(--mono); color: var(--tm); }
 
   .strip { display: flex; flex-wrap: wrap; gap: 14px; }
@@ -101,6 +109,8 @@
   .failure { display: flex; gap: 11px; margin-top: 17px; padding: 14px 15px; border-radius: 8px;
              background: #2B1517; font: 11px/1.6 var(--mono); color: #F0A6A3; }
   .failure.warn { background: #2A1F0C; color: #EFCE7B; }
+  .failure.flaky { background: #2C1524; color: #F2A7CF; }
+  .failure .attempts { margin-top: 6px; opacity: 0.82; }
   .failure b { display: block; font-weight: 600; }
   .failure div > span { display: block; opacity: 0.82; }
   .failure > .i { width: 14px; height: 14px; margin-top: 0.2em; }
@@ -124,8 +134,34 @@
   dialog p .hint { color: var(--tm); }
   footer { padding: 34px 36px 48px; font: 11.5px var(--mono); color: var(--tm); }
 
+  /* Focus findings sit after the filmstrips: the functional verdict is what the run is about, and these are
+     what it noticed along the way. */
+  section.findings { padding: 40px 36px 0; }
+  section.findings > h2 { margin: 0 0 6px; font-size: 19px; font-weight: 600; }
+  section.findings > p { margin: 0 0 22px; font-size: 12.5px; color: var(--ts); }
+  .focus { margin-bottom: 28px; }
+  .focus h3 { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 0 0 12px;
+              font-size: 15px; font-weight: 600; text-transform: capitalize; }
+  .focus h3 .counts { font: 11.5px var(--mono); color: var(--tm); text-transform: none; }
+  .finding { display: flex; gap: 16px; background: var(--surface); border: 1px solid var(--border);
+             border-left: 3px solid var(--imp); border-radius: 9px; padding: 15px 17px; margin-bottom: 10px; }
+  .finding .body { flex: 1; min-width: 0; }
+  .finding .top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 7px; }
+  .finding .top code { font: 11.5px var(--mono); color: var(--ts); }
+  .finding .summary { font-size: 13.5px; margin: 0 0 6px; }
+  .finding .where, .finding .detail { font: 11px/1.6 var(--mono); color: var(--tm); word-break: break-word; }
+  .finding .detail { color: var(--ts); white-space: pre-wrap; margin-top: 4px; }
+  .finding ul { margin: 8px 0 0; padding-left: 18px; font-size: 12px; color: var(--ts); line-height: 1.7; }
+  .finding ul a { color: var(--ts); }
+  .finding img { width: 170px; height: 106px; object-fit: cover; object-position: top center; flex: none;
+                 border-radius: 6px; border: 1px solid var(--border); background: var(--surface2); cursor: zoom-in; }
+  article.card:target { outline: 2px solid var(--ts); outline-offset: 3px; }
+
   @media (max-width: 720px) {
-    header, .chips, section.feature { padding-left: 18px; padding-right: 18px; }
+    header, .chips, section.feature, section.findings { padding-left: 18px; padding-right: 18px; }
+    .banner { margin-left: 18px; margin-right: 18px; }
+    .finding { flex-direction: column; }
+    .finding img { width: 100%; height: auto; aspect-ratio: 16 / 10; }
     figure.step { width: calc(50% - 7px); }
   }
 </style>
@@ -159,6 +195,7 @@
   <div class="chips" id="chips"></div>
   <div id="banners"></div>
   <main id="report"></main>
+  <section class="findings" id="findings" hidden></section>
   <footer id="footer"></footer>
 </div>
 
@@ -175,6 +212,12 @@ const TICK = { passed: "check", failed: "xmark", skipped: "minus", not_recorded:
 const VERDICT_ICON = { passed: "circle-check", failed: "circle-xmark",
                        incomplete: "circle-exclamation", not_run: "minus" };
 const LABEL = { passed: "passed", failed: "failed", incomplete: "incomplete", not_run: "not run" };
+const IMPACTS = ["critical", "serious", "moderate", "minor"];
+// Scenario cards get an anchor so a finding can point at the filmstrip it was seen in.
+const cardIds = new Map();
+DATA.features.forEach((f, fi) => f.scenarios.forEach((s, si) => cardIds.set(`${f.file}\u0000${s.name}`, `sc-${fi}-${si}`)));
+const cardId = (feature, scenario) => cardIds.get(`${feature}\u0000${scenario}`);
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 const t = DATA.totals;
 document.getElementById("title").textContent =
@@ -198,6 +241,8 @@ document.getElementById("chips").innerHTML = [
  .map(([k, n]) => `<span class="chip"><i style="--c: var(--${k.replace(" ", "_")})"></i>${n} ${k}</span>`)
  .concat(Object.entries(t.settled_by).map(([r, n]) =>
    `<span class="chip"><i style="--c: var(--${esc(r)})"></i>${n} settled by ${esc(r)}</span>`))
+ .concat(t.flaky ? [`<span class="chip"><i style="--c: var(--flaky)"></i>${t.flaky} flaky</span>`] : [])
+ .concat(t.findings ? [`<a class="chip" href="#findings"><i style="--c: var(--serious)"></i>${plural(t.findings, "focus finding")}</a>`] : [])
  .join("");
 
 // Two things that are invisible in a pass/fail table and shouldn't be: scenarios whose runner
@@ -214,6 +259,13 @@ for (const c of DATA.background_failures) {
   banners.push(`<div class="banner cluster">${ico("triangle-exclamation")}<b>One Background step failed in ${c.scenarios.length} scenarios.</b>
     <code>${esc(c.step)}</code>${c.reason ? " — " + esc(c.reason) : ""}
     <ul>${c.scenarios.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></div>`);
+}
+// Flaky is a signal that a person should look, so it gets said up top with the reason, not left as a badge.
+const flaky = DATA.features.flatMap((f) => f.scenarios).filter((s) => s.flaky);
+if (flaky.length) {
+  banners.push(`<div class="banner flaky">${ico("triangle-exclamation")}<b>${plural(flaky.length, "flaky scenario")}.</b>
+    Attempts disagreed and the cause was not found or not fixed. Worth investigating before trusting these verdicts.
+    <ul>${flaky.map((s) => `<li><a href="#${cardId(s.feature, s.name)}">${esc(s.name)}</a>${s.flaky_reason ? " — " + esc(s.flaky_reason) : ""}</li>`).join("")}</ul></div>`);
 }
 if (DATA.orphan_records.length) {
   banners.push(`<div class="banner">${ico("triangle-exclamation")}<b>${DATA.orphan_records.length} recorded steps match no scenario in the specs.</b>
@@ -255,14 +307,20 @@ function scenarioHTML(sc) {
   // Sub-100ms is the recorder's own overhead, not a measurement worth showing.
   const dur = sc.elapsed_ms >= 100 ? `<span class="dur">${(sc.elapsed_ms / 1000).toFixed(1)}s</span>` : "";
   const runner = sc.runner ? `<span class="badge ${esc(sc.runner)}">${esc(sc.runner)}</span>` : "";
-  return `<article class="card ${sc.verdict}" style="--v: var(--${sc.verdict})">
+  const flakyBadge = sc.flaky ? `<span class="badge flaky">flaky</span>` : "";
+  const attempts = (sc.attempts ?? []).map((a) => `${esc(a.pass)} ${esc(a.run_id)}: ${esc(LABEL[a.verdict] ?? a.verdict)}`).join(" · ");
+  const flakyNote = sc.flaky
+    ? `<div class="failure flaky">${ico("triangle-exclamation")}<div><b>Flaky${sc.flaky_reason ? ": " + esc(sc.flaky_reason) : ""}</b><span class="attempts">${attempts}</span></div></div>`
+    : "";
+  return `<article class="card ${sc.verdict}" id="${cardId(sc.feature, sc.name)}" style="--v: var(--${sc.verdict})">
     <div class="chead">
       <div class="left">${ico(VERDICT_ICON[sc.verdict], "verdict-icon")}<h3>${esc(sc.name)}</h3></div>
-      <div class="left"><span class="badge verdict">${LABEL[sc.verdict]}</span>${runner}${dur}</div>
+      <div class="left"><span class="badge verdict">${LABEL[sc.verdict]}</span>${flakyBadge}${runner}${dur}</div>
     </div>
     ${bgHTML}
     <div class="strip">${own.map(stepHTML).join("")}</div>
     ${note}
+    ${flakyNote}
   </article>`;
 }
 
@@ -282,6 +340,43 @@ document.getElementById("report").innerHTML = DATA.features.map((f) => {
   </section>`;
 }).join("");
 
+function findingHTML(g) {
+  const shot = g.occurrences.find((o) => o.img);
+  const img = shot ? `<img loading="lazy" src="${DATA.images[shot.img]}" alt="${esc(g.summary)}">` : "";
+  const paths = g.paths?.length ? g.paths : [g.path].filter(Boolean);
+  const pages = paths.length > 3 ? `${paths.slice(0, 3).map(esc).join(", ")} and ${paths.length - 3} more` : paths.map(esc).join(", ");
+  const where = [pages && `on ${pages}`, g.target && `at <code>${esc(g.target)}</code>`, g.wcag && esc(g.wcag)]
+    .filter(Boolean).join(" · ");
+  const seen = g.occurrences.map((o) =>
+    `<li><a href="#${cardId(o.feature, o.scenario)}">${esc(o.scenario)}</a> › ${esc(o.step)}</li>`).join("");
+  return `<div class="finding" style="--imp: var(--${esc(g.impact)})">
+    <div class="body">
+      <div class="top"><span class="badge impact">${esc(g.impact)}</span><span class="badge source">${esc(g.source)}</span><code>${esc(g.rule)}</code></div>
+      <p class="summary">${esc(g.summary)}</p>
+      ${where ? `<div class="where">${where}</div>` : ""}
+      ${g.detail ? `<div class="detail">${esc(g.detail)}</div>` : ""}
+      <ul>${seen}</ul>
+    </div>
+    ${img}
+  </div>`;
+}
+
+if (DATA.findings?.total) {
+  const el = document.getElementById("findings");
+  const foci = [...new Set(DATA.findings.groups.map((g) => g.focus))];
+  el.innerHTML = `<h2>Focus findings</h2>
+    <p>${plural(DATA.findings.total, "distinct finding")} from ${DATA.findings.recorded} checks, most severe first.
+      A finding seen on several transitions is listed once with every place it showed up. These never change a scenario's verdict.</p>
+    ${foci.map((f) => {
+      const counts = DATA.findings.by_focus[f];
+      return `<div class="focus">
+        <h3>${esc(f)}<span class="counts">${IMPACTS.filter((i) => counts[i]).map((i) => `${counts[i]} ${i}`).join(" · ")}</span></h3>
+        ${DATA.findings.groups.filter((g) => g.focus === f).map(findingHTML).join("")}
+      </div>`;
+    }).join("")}`;
+  el.hidden = false;
+}
+
 document.getElementById("footer").innerHTML = ico("camera") +
   `${DATA.frames} frames · ${Object.keys(DATA.images).length} distinct images embedded · generated by browser-test`;
 
@@ -289,7 +384,7 @@ document.getElementById("footer").innerHTML = ico("camera") +
 const box = document.getElementById("lightbox");
 const full = box.querySelector("img");
 document.addEventListener("click", (e) => {
-  const img = e.target.closest("figure.step img");
+  const img = e.target.closest("figure.step img, .finding img");
   if (img) {
     full.src = img.src;
     box.querySelector("p").innerHTML =

@@ -17,10 +17,17 @@ import {
 } from "@cucumber/gherkin";
 import { IdGenerator } from "@cucumber/messages";
 
-const args = process.argv.slice(2);
+// A directory stands for every .feature file under it, so the skill can validate a whole specs tree without a
+// `$(find ...)`, which its own one-command-per-Bash-call rule forbids.
+const features = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+  const p = `${dir}/${e.name}`;
+  return e.isDirectory() ? features(p) : e.name.endsWith(".feature") ? [p] : [];
+});
+const args = process.argv.slice(2).flatMap((a) =>
+  fs.existsSync(a) && fs.statSync(a).isDirectory() ? features(a.replace(/\/+$/, "")) : [a]);
 
 if (args.length === 0) {
-  console.error("Usage: bun validate.js <file1.feature> [file2.feature ...]");
+  console.error("Usage: bun validate.js <file.feature | directory> ...");
   process.exit(2);
 }
 
