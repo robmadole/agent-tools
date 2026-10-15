@@ -16,9 +16,10 @@ The manifest schema follows `https://anthropic.com/claude-code/marketplace.schem
 ## Plugins & Skills
 
 - **`testing`** — Testing tools for developing software.
-  - `browser-test` — Orchestrate QA browser testing via Gherkin specs and Playwright. With `"runner": "jev"`, `scripts/jev-run.js` runs specs first with TypeSafe's Jev model and only its leftovers go to Claude subagents.
+  - `browser-test` — Orchestrate QA browser testing via Gherkin specs and Playwright. With `"runner": "jev"`, `scripts/jev-run.js` runs specs first with TypeSafe's Jev model and only its leftovers go to Claude subagents. Opt-in foci (`foci/*.md`, asked before every run) replay all scenarios on Claude to check accessibility (vendored axe-core) and responsive design; `report.js` records their findings and flags flaky scenarios.
   - `bug-hunter` — Time/count-boxed bug hunt against a feature branch, combining code reading with live browser verification, ending in a scored report.
   - `jit-catch` — Generate catching tests for Elixir code changes to check a diff for bugs.
+  - Mod (`hooks/register.tsx`): live status of the newest browser-test run, read only from `{directory}/tmp/run-N/run.db` (no tool-call watching). A band above the prompt and a toast per new failure. Phases come from `report.js phase`, which `SKILL.md` calls at each phase boundary. The query and verdict logic are in `hooks/status.ts`. It needs the `sqlite3` binary.
 - **`develop`** — Tools for writing code during development.
   - `hobgoblin` — Examine similar files for consistency violations and produce a list of differences.
 - **`quality`** — Tools for reviewing code quality.

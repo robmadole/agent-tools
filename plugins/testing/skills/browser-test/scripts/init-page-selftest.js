@@ -107,11 +107,22 @@ const CASES = [
     expect: { loaded: true, project: 0, reason: null },
     projectHelperRuns: false,
   },
+  {
+    // A session started outside the project: the cwd has nothing, the caller passes the root.
+    name: "D  cwd elsewhere, root passed in ctx",
+    files: {},
+    rootFiles: { ".browser-tests.json": '{"directory":"browser-tests"}', "browser-tests/playwright-helpers.js": HELPERS },
+    expect: { loaded: true, config: true, project: 1, reason: null },
+    projectHelperRuns: true,
+  },
 ];
 
 let n = 0;
 for (const c of CASES) {
   const cwd = project(c.name[0], c.files);
+  const root = c.rootFiles ? project(`${c.name[0]}root`, c.rootFiles) : null;
+  // Spread into every ctx below, so case D's bridge sees the root on its first call.
+  const rootCtx = root ? `root: ${JSON.stringify(root)}, ` : "";
   const mcp = client(cwd);
   try {
     await mcp.start();
@@ -120,7 +131,7 @@ for (const c of CASES) {
     assert.ok(!nav.error && !nav.result?.isError, `${c.name}: browser unusable — init-page broke tab init`);
     n++;
 
-    const info = await mcp.evaluate("async (page) => page.__helpers");
+    const info = await mcp.evaluate(`async (page) => { await page.__runStep("", { ${rootCtx} }); return page.__helpers; }`);
     for (const [k, v] of Object.entries(c.expect)) {
       assert.strictEqual(info[k], v, `${c.name}: __helpers.${k} was ${JSON.stringify(info[k])}, wanted ${JSON.stringify(v)}`);
     }
@@ -133,10 +144,10 @@ for (const c of CASES) {
     n++;
 
     const out = await mcp.evaluate(`async (page) => ({
-      project: await page.__runStep('Given I sign in as the fixture user', { values: { email: 'user@example.com' } }),
-      generic: await page.__runStep('When I fill in "Email" with "a@b.c"', {}),
-      unmapped: await page.__runStep('When I do something nobody mapped', {}),
-      missing: await page.__runStep('When I click the "Nowhere" button', {}),
+      project: await page.__runStep('Given I sign in as the fixture user', { ${rootCtx}values: { email: 'user@example.com' } }),
+      generic: await page.__runStep('When I fill in "Email" with "a@b.c"', { ${rootCtx} }),
+      unmapped: await page.__runStep('When I do something nobody mapped', { ${rootCtx} }),
+      missing: await page.__runStep('When I click the "Nowhere" button', { ${rootCtx} }),
       title: await page.title() })`);
     assert.strictEqual(out.project, c.projectHelperRuns, `${c.name}: project helper ran?`);
     assert.strictEqual(out.title, c.projectHelperRuns ? "Dashboard" : "Sign In", `${c.name}: page state after helper`);
@@ -148,6 +159,7 @@ for (const c of CASES) {
   } finally {
     mcp.stop();
     fs.rmSync(cwd, { recursive: true, force: true });
+    if (root) fs.rmSync(root, { recursive: true, force: true });
   }
 }
 

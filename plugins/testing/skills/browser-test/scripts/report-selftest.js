@@ -159,6 +159,279 @@ ok("totals, pass rate and settled_by come out of SQL, not out of counting");
   ok("lane records roll up into steps_by_lane and model_free_rate");
 }
 
+// --- a Phase 2b re-run that passes with nothing changed is inconsistent, and nobody has judged it yet --
+{
+  const w = find(summary(), "Wrong password");
+  assert.strictEqual(w.inconsistent, true, "incomplete then passed, same runner, same spec text");
+  assert.strictEqual(w.flaky, null, "inconsistent is not flaky until the orchestrator says so");
+  ok("same-runner attempts that disagree on an unchanged spec -> inconsistent, flaky unjudged");
+}
+
+// --- focus pass, flaky flags, findings: their own run so the counts above stay what they are ------
+const fails = (args) => {
+  const p = Bun.spawnSync(["bun", REPORT, ...args]);
+  assert.notStrictEqual(p.exitCode, 0, `expected ${args[0]} to refuse: ${args.join(" ")}`);
+  return p.stderr.toString();
+};
+{
+  const R2 = path.join(ws, "run-focus");
+  run(["init", "--run", R2, SPEC]);
+  const rec = (scenario, step, status, extra = []) =>
+    run(["record", "--run", R2, "--feature", SPEC, "--scenario", scenario, "--step", step, "--status", status,
+         ...extra]);
+  const sum = (lean = false) => JSON.parse(run(["summary", "--run", R2, ...(lean ? [] : ["--steps"])]));
+  const sc = (s, name) => s.features[0].scenarios.find((x) => x.name === name);
+  const VALID = [...BG, 'When I fill "Email" with "free@example.com"', 'Then I should see "Dashboard"'];
+
+  // The focus pass replays a passing scenario and it fails this time. The verdict must not move.
+  for (const s of VALID) rec("Valid credentials", s, "passed", ["--run-id", "claude-1"]);
+  for (const s of VALID.slice(0, 3)) rec("Valid credentials", s, "passed", ["--run-id", "focus-1", "--pass", "focus"]);
+  rec("Valid credentials", VALID[3], "failed", ["--run-id", "focus-1", "--pass", "focus", "--reason", "no Dashboard"]);
+  let v = sc(sum(), "Valid credentials");
+  assert.strictEqual(v.verdict, "passed", "a focus-pass record replaced the functional verdict");
+  assert.strictEqual(v.recorded_steps, 4);
+  assert.strictEqual(v.inconsistent, true);
+  assert.deepStrictEqual(v.attempts.map((a) => [a.pass, a.verdict]), [["functional", "passed"], ["focus", "failed"]]);
+  assert.strictEqual(v.attempts[1].failure_reason, "no Dashboard");
+  ok("a focus-pass failure leaves the functional verdict alone and marks the scenario inconsistent");
+
+  fails(["record", "--run", R2, "--feature", SPEC, "--scenario", "Valid credentials", "--step", VALID[0],
+         "--status", "passed", "--pass", "replay"]);
+  ok("--pass only takes functional or focus");
+
+  // Jev failing and Claude passing is the fallback working, not a disagreement.
+  rec("Wrong password", BG[0], "failed", ["--run-id", "jev-1", "--runner", "jev"]);
+  for (const s of [...BG, 'When I fill "Email" with "nobody@example.com"', 'Then I should see "Invalid email or password"']) {
+    rec("Wrong password", s, "passed", ["--run-id", "claude-1"]);
+  }
+  assert.strictEqual(sc(sum(), "Wrong password").inconsistent, false);
+  ok("a Jev leftover that Claude passes is not inconsistent");
+
+  // A repaired spec: the failed attempt recorded the old step text, so it tested something else.
+  rec("Never reached", BG[0], "passed", ["--run-id", "claude-1"]);
+  rec("Never reached", BG[1], "passed", ["--run-id", "claude-1"]);
+  rec("Never reached", 'When I click "Forgot it"', "failed", ["--run-id", "claude-1"]);
+  for (const s of [...BG, 'When I click "Forgot password"', 'Then I should see "Reset your password"']) {
+    rec("Never reached", s, "passed", ["--run-id", "repair-1"]);
+  }
+  assert.strictEqual(sc(sum(), "Never reached").inconsistent, false);
+  ok("attempts on different step text (a repaired spec) are not compared");
+
+  // Flaky is recorded by hand, with a reason, and refuses a scenario that is not in the manifest.
+  run(["flag", "--run", R2, "--feature", SPEC, "--scenario", "Valid credentials", "--flaky", "true",
+       "--reason", "Dashboard rendered after the assertion; nothing changed between attempts"]);
+  fails(["flag", "--run", R2, "--feature", SPEC, "--scenario", "Valid credentialz", "--flaky", "true"]);
+  fails(["flag", "--run", R2, "--feature", SPEC, "--scenario", "Valid credentials", "--flaky", "maybe"]);
+  let s2 = sum();
+  v = sc(s2, "Valid credentials");
+  assert.strictEqual(v.flaky, true);
+  assert.match(v.flaky_reason, /after the assertion/);
+  assert.strictEqual(s2.totals.flaky, 1);
+  assert.strictEqual(s2.totals.inconsistent, 1);
+  assert.deepStrictEqual(s2.inconsistent.map((i) => [i.scenario, i.flaky]), [["Valid credentials", true]]);
+  run(["flag", "--run", R2, "--feature", SPEC, "--scenario", "Valid credentials", "--flaky", "false",
+       "--reason", "testdata collision, fixed"]);
+  assert.strictEqual(sc(sum(), "Valid credentials").flaky, false, "a later flag replaces the earlier one");
+  ok("flag records flaky with a reason, replaces itself, and refuses unknown scenarios and values");
+
+  // Findings: one by hand, and a batch straight from an axe.run() result.
+  const F = ["--run", R2, "--feature", SPEC, "--scenario", "Valid credentials", "--run-id", "focus-1"];
+  run(["finding", ...F, "--focus", "accessibility", "--step", VALID[2], "--rule", "focus-not-moved",
+       "--impact", "serious", "--summary", "Focus stays on the submit button after the dialog opens",
+       "--url", "http://localhost/sign-in?x=1", "--screenshot", shot]);
+  fails(["finding", ...F, "--focus", "accessibility", "--step", VALID[2], "--rule", "r", "--impact", "huge",
+         "--summary", "s"]);
+  fails(["finding", "--run", R2, "--feature", SPEC, "--scenario", "Nope", "--focus", "accessibility",
+         "--step", VALID[2], "--rule", "r", "--impact", "minor", "--summary", "s"]);
+  const axeFile = path.join(ws, "axe.json");
+  const axeResult = (url) => ({
+    url,
+    violations: [
+      { id: "image-alt", impact: "critical", help: "Images must have alternate text", tags: ["cat.text-alternatives", "wcag2a", "wcag111"],
+        nodes: [{ target: ["img.logo"], impact: "critical", failureSummary: "Element does not have an alt attribute" },
+                { target: ["img.hero"], impact: "critical", failureSummary: "Element does not have an alt attribute" }] },
+      { id: "region", impact: "moderate", help: "All page content should be contained by landmarks", tags: ["best-practice"],
+        nodes: [{ target: ["p"], impact: "moderate" }] },
+    ],
+    incomplete: [{ id: "color-contrast", help: "Contrast", nodes: [{ target: ["p.lowc"], any: [{ message: "background overlapped" }] }] }],
+  });
+  fs.writeFileSync(axeFile, JSON.stringify(axeResult("http://localhost/sign-in")));
+  const axeOut = JSON.parse(run(["finding", ...F, "--focus", "accessibility", "--step", VALID[0], "--from", axeFile]));
+  assert.strictEqual(axeOut.recorded, 3, "one finding per violating node");
+  assert.deepStrictEqual(axeOut.incomplete, [{ rule: "color-contrast", target: "p.lowc", message: "background overlapped" }]);
+  // Same page reached again on a later transition, with a different query string: same findings, not new ones.
+  fs.writeFileSync(axeFile, JSON.stringify(axeResult("http://localhost/sign-in?after=submit")));
+  run(["finding", ...F, "--focus", "accessibility", "--step", VALID[2], "--from", axeFile]);
+  fs.writeFileSync(axeFile, JSON.stringify([{ rule: "horizontal-overflow", impact: "serious", summary: "Page scrolls sideways at 320px",
+                                              target: "div.wide", url: "http://localhost/sign-in" }]));
+  run(["finding", ...F, "--focus", "responsive", "--step", VALID[0], "--from", axeFile]);
+
+  s2 = sum();
+  const g = s2.findings.groups;
+  assert.strictEqual(s2.findings.recorded, 8);
+  assert.strictEqual(s2.findings.total, 5, "8 rows collapse to 5 distinct findings");
+  assert.strictEqual(s2.totals.findings, 5);
+  assert.deepStrictEqual(g.map((x) => x.impact), ["critical", "critical", "serious", "serious", "moderate"],
+    "most severe first");
+  const alt = g.find((x) => x.target === "img.logo");
+  assert.strictEqual(alt.occurrences.length, 2, "seen on two transitions");
+  assert.strictEqual(alt.path, "/sign-in");
+  assert.strictEqual(alt.source, "axe");
+  assert.strictEqual(alt.wcag, "wcag2a wcag111");
+  assert.deepStrictEqual(s2.findings.by_focus,
+    { accessibility: { critical: 2, serious: 1, moderate: 1, minor: 0 },
+      responsive: { critical: 0, serious: 1, moderate: 0, minor: 0 } });
+  assert.strictEqual(g.find((x) => x.rule === "focus-not-moved").source, "judgment");
+  assert.ok(g.find((x) => x.rule === "focus-not-moved").occurrences[0].has_png);
+  ok("findings: by hand and from an axe.run() result, grouped by rule/path/target, most severe first");
+
+  const leanAlt = JSON.parse(run(["summary", "--run", R2])).findings.groups.find((x) => x.target === "img.logo");
+  assert.strictEqual(leanAlt.occurrence_count, 2);
+  assert.ok(leanAlt.occurrences.length <= 3);
+  ok("lean summary caps occurrences and keeps the count");
+
+  if (fs.existsSync(path.join(HERE, "..", "assets", "template.html"))) {
+    const out = path.join(ws, "focus.html");
+    const built = JSON.parse(run(["build", "--run", R2, "--out", out]));
+    const html = fs.readFileSync(out, "utf8");
+    const data = JSON.parse(html.match(/const DATA = (.*);\n/)[1]);
+    assert.strictEqual(data.findings.total, 5);
+    assert.ok(data.images[data.findings.groups.find((x) => x.rule === "focus-not-moved").occurrences[0].img],
+      "the finding's screenshot was not embedded");
+    assert.ok(built.images >= 1);
+    ok("build embeds findings and their screenshots");
+  }
+
+  // A shared header overflowing on three pages is one finding with three paths, not three findings. Without a
+  // target the page is all there is, so those still split by path.
+  for (const u of ["http://localhost/a", "http://localhost/b", "http://localhost/c"]) {
+    run(["finding", ...F, "--focus", "responsive", "--step", VALID[0], "--rule", "horizontal-overflow", "--impact", "serious",
+         "--summary", `Header overflows on ${u}`, "--target", "header.site", "--url", u, "--source", "measurement"]);
+    run(["finding", ...F, "--focus", "accessibility", "--step", VALID[0], "--rule", "landmark-main", "--impact", "moderate",
+         "--summary", "No main landmark", "--url", u]);
+  }
+  const g3 = sum().findings.groups;
+  const header = g3.filter((x) => x.target === "header.site");
+  assert.strictEqual(header.length, 1, "one group for one element across pages, whatever the summaries say");
+  assert.deepStrictEqual(header[0].paths, ["/a", "/b", "/c"]);
+  assert.strictEqual(header[0].source, "measurement");
+  assert.strictEqual(g3.filter((x) => x.rule === "landmark-main").length, 3, "untargeted findings stay per page");
+  fails(["finding", ...F, "--focus", "responsive", "--step", VALID[0], "--rule", "r", "--impact", "minor",
+         "--summary", "s", "--source", "guess"]);
+  ok("targeted findings group across pages; --source takes axe, measurement or judgment");
+
+  // axe stops at shadow roots, and two of its "could not decide" kinds there were dropped by hand every time.
+  fs.writeFileSync(axeFile, JSON.stringify({ url: "http://localhost/sign-in", violations: [], incomplete: [
+    { id: "color-contrast", help: "Contrast", nodes: [{ target: [["wa-button", "button.base"]] }, { target: ["p.lowc"] }] },
+    { id: "aria-valid-attr-value", help: "ARIA", nodes: [{ target: [["wa-select", "input.display"]] }] },
+    { id: "label", help: "Label", nodes: [{ target: [["wa-input", "input"]] }] },
+  ] }));
+  const shadowOut = JSON.parse(run(["finding", ...F, "--focus", "accessibility", "--step", VALID[0], "--from", axeFile]));
+  assert.strictEqual(shadowOut.incomplete_dropped, 2);
+  assert.deepStrictEqual(shadowOut.incomplete.map((x) => x.target), ["p.lowc", "wa-input input"],
+    "light-DOM contrast and other rules in shadow DOM still come back");
+  ok("shadow-root contrast and aria-controls incompletes are dropped and counted");
+}
+
+// --- app text with replacement patterns, and --from items carrying their own scenario and screenshot ------
+{
+  const rd = path.join(ws, "dollar-run");
+  run(["init", "--run", rd, SPEC]);
+  const xdb = new Database(path.join(rd, "run.db"));
+  const first = xdb.query("SELECT scenario, step FROM expected ORDER BY ordinal, position LIMIT 1").get();
+  xdb.close();
+  const reason = "Expected \"$5\" but saw $& and $' and $`";
+  run(["record", "--run", rd, "--feature", SPEC, "--scenario", first.scenario, "--step", first.step,
+       "--status", "failed", "--reason", reason]);
+  const items = path.join(ws, "items.json");
+  fs.writeFileSync(items, JSON.stringify([{ rule: "content-clipped", impact: "minor", summary: "Cut off", screenshot: shot }]));
+  run(["finding", "--run", rd, "--feature", SPEC, "--scenario", first.scenario, "--step", first.step,
+       "--focus", "responsive", "--from", items]);
+  fs.writeFileSync(items, JSON.stringify([{ rule: "r", impact: "minor", summary: "s", scenario: "No such scenario" }]));
+  fails(["finding", "--run", rd, "--feature", SPEC, "--scenario", first.scenario, "--step", first.step,
+         "--focus", "responsive", "--from", items]);
+  const out = path.join(ws, "dollar.html");
+  run(["build", "--run", rd, "--out", out]);
+  const data = JSON.parse(fs.readFileSync(out, "utf8").match(/const DATA = (.*);\n/)[1]);
+  assert.ok(JSON.stringify(data).includes("saw $& and $' and $`"), "replacement patterns in app text survive build");
+  const occ = data.findings.groups[0].occurrences[0];
+  assert.ok(occ.img && data.images[occ.img].startsWith("data:image/png;base64,"), "an item's screenshot path is loaded as an image");
+  ok("build keeps $& in app text; --from items are checked against the manifest and their screenshots loaded");
+}
+
+// --- runner: one pass's instructions, shared values filled in, per-runner ones left in braces -----------
+{
+  const dir = path.join(ws, "runner-proj");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "setup.md"), "Sign in as qa@example.com.");
+  fs.writeFileSync(path.join(dir, ".browser-tests.json"),
+    JSON.stringify({ directory: "browser-tests", baseURL: "http://localhost:4000", furtherSetup: "setup.md" }));
+  const rd = path.join(ws, "runner-run");
+  fs.mkdirSync(rd);
+  const cfg = path.join(dir, ".browser-tests.json");
+  const fn = JSON.parse(run(["runner", "--run", rd, "--pass", "functional", "--config", cfg, "--shots"]));
+  const ftext = fs.readFileSync(fn.file, "utf8");
+  assert.deepStrictEqual(fn.unfilled, [], "every shared value filled");
+  assert.ok(ftext.includes("http://localhost:4000") && ftext.includes("Sign in as qa@example.com."));
+  assert.ok(ftext.includes(`${rd}/shots/<slug>-<n>.png`), "screenshot instructions point at this run");
+  assert.ok(ftext.includes("{playwright tool prefix}") && ftext.includes("{report command}"), "per-runner values left alone");
+  const fo = JSON.parse(run(["runner", "--run", rd, "--pass", "focus", "--config", cfg, "--foci", "accessibility,responsive"]));
+  const otext = fs.readFileSync(fo.file, "utf8");
+  assert.deepStrictEqual(fo.unfilled, []);
+  assert.ok(otext.includes("## Focus pass") && otext.includes("## Accessibility") && otext.includes("## Responsive design"));
+  assert.ok(!/^name: /m.test(otext), "focus frontmatter stripped");
+  assert.ok(otext.includes(path.join(rd, "focus")) && otext.includes("axe.min.js") && !otext.includes("{axe path}"));
+  assert.ok(!otext.includes("browser_take_screenshot` with `type: \"png\"`, `scale: \"css\"`, and\n   `filename: \"" + rd + "/shots"),
+    "no every-step screenshots in the focus pass");
+  assert.ok(fs.existsSync(path.join(rd, "focus")));
+  fails(["runner", "--run", rd, "--pass", "focus", "--config", cfg]);
+  fails(["runner", "--run", rd, "--pass", "focus", "--config", cfg, "--foci", "nope"]);
+  ok("runner writes each pass's instructions with shared values filled and per-runner ones left");
+}
+
+// --- claim: the run number is taken by creating the directory, so two runs can't share one --------------
+{
+  const dir = path.join(ws, "claim");
+  fs.mkdirSync(path.join(dir, "results"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "results", "2026-10-15-run-8.md"), "");
+  const a = JSON.parse(run(["claim", "--dir", dir]));
+  const b = JSON.parse(run(["claim", "--dir", dir]));
+  assert.strictEqual(a.n, 9, "one past the highest report");
+  assert.strictEqual(b.n, 10, "a second claim before any report is written still gets its own number");
+  assert.ok(fs.existsSync(a.run) && fs.existsSync(b.run));
+  ok("claim takes the next free run number, counting reports and claimed run dirs");
+}
+
+// --- a run.db from before pass/flags/findings existed takes the new records ----------------------
+{
+  const OLD = path.join(ws, "run-old");
+  fs.mkdirSync(OLD);
+  const odb = new Database(path.join(OLD, "run.db"), { create: true });
+  odb.exec(`
+    CREATE TABLE features (file TEXT PRIMARY KEY, name TEXT NOT NULL);
+    CREATE TABLE expected (feature TEXT NOT NULL, scenario TEXT NOT NULL, ordinal INTEGER NOT NULL,
+      position INTEGER NOT NULL, step TEXT NOT NULL, origin TEXT NOT NULL, PRIMARY KEY (feature, scenario, position));
+    CREATE TABLE testdata (feature TEXT NOT NULL, position INTEGER NOT NULL, command TEXT NOT NULL,
+      status TEXT, output TEXT, PRIMARY KEY (feature, position));
+    CREATE TABLE steps (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, run_id TEXT NOT NULL,
+      runner TEXT NOT NULL, feature TEXT NOT NULL, scenario TEXT NOT NULL, step TEXT NOT NULL,
+      status TEXT NOT NULL, reason TEXT, png BLOB);
+    CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);`);
+  odb.prepare("INSERT INTO features VALUES (?, ?)").run(SPEC, "Sign in");
+  odb.prepare("INSERT INTO expected VALUES (?, ?, 0, 0, ?, 'scenario')").run(SPEC, "Only", "Given x");
+  odb.close();
+  run(["record", "--run", OLD, "--feature", SPEC, "--scenario", "Only", "--step", "Given x", "--status", "passed",
+       "--pass", "focus"]);
+  run(["flag", "--run", OLD, "--feature", SPEC, "--scenario", "Only", "--flaky", "true"]);
+  run(["finding", "--run", OLD, "--feature", SPEC, "--scenario", "Only", "--step", "Given x", "--focus", "responsive",
+       "--rule", "r", "--impact", "minor", "--summary", "s"]);
+  const old = JSON.parse(run(["summary", "--run", OLD]));
+  assert.strictEqual(old.features[0].scenarios[0].verdict, "not_run", "a focus-only record is not a verdict");
+  assert.strictEqual(old.totals.flaky, 1);
+  assert.strictEqual(old.findings.total, 1);
+  ok("an older run.db is migrated in place: pass column, flags and findings tables");
+}
+
 // --- the default summary stays small enough to read into an orchestrator's context ---------------
 const lean = JSON.parse(run(["summary", "--run", RUN]));
 const leanScenario = lean.features[0].scenarios[0];
@@ -205,6 +478,23 @@ assert.strictEqual(cdb.query("SELECT COUNT(*) c FROM steps").get().c, 36, "lost 
 assert.strictEqual(cdb.query("PRAGMA integrity_check").get()["integrity_check"], "ok");
 cdb.close();
 ok("36 rows from 3 concurrent writer processes, integrity ok");
+
+// --- phase ---------------------------------------------------------------------------------------
+// Phase 1 runs before init, so phase has to be able to create the database on its own.
+const PH = path.join(ws, "run-phase");
+run(["phase", "--run", PH, "--name", "specs"]);
+run(["init", "--run", PH, SPEC]);
+run(["phase", "--run", PH, "--name", "execute"]);
+const pdb = new Database(path.join(PH, "run.db"));
+const meta = Object.fromEntries(pdb.query("SELECT key, value FROM meta").all().map((r) => [r.key, r.value]));
+assert.strictEqual(meta.phase, "execute");
+assert.ok(Number(meta.phase_at) > 0, "phase_at should be a timestamp");
+assert.ok(meta.initialized_at, "init after phase should still write its manifest");
+assert.strictEqual(pdb.query("PRAGMA journal_mode").get().journal_mode, "wal");
+pdb.close();
+const bad = Bun.spawnSync(["bun", REPORT, "phase", "--run", PH, "--name", "lunch"]);
+assert.notStrictEqual(bad.exitCode, 0, "an unknown phase name should be refused");
+ok("phase creates run.db before init, overwrites the current phase, refuses unknown names");
 
 // --- build ---------------------------------------------------------------------------------------
 if (fs.existsSync(path.join(HERE, "..", "assets", "template.html"))) {

@@ -4,5 +4,6 @@
   "version": "1.0.33",
   "author": {
     "name": "Rob Madole"
-  }
+  },
+  "types": "./types/index.d.ts"
 }

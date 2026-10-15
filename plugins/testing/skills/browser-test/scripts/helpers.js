@@ -29,11 +29,62 @@ const roleOf = (noun) => (noun && ROLES[noun.toLowerCase()] ? [ROLES[noun.toLowe
 // Nothing matching exactly one is a defer, which keeps the property that matters: a name genuinely belonging
 // to two elements (two different links both called "Sign in") goes to the model, which can use the context
 // around them, rather than being guessed at with .first().
+//
+// The one exception is links that all go to the same place. A header "Sign in" and a hero "Sign in" with the
+// same href are one destination drawn twice, and a real app had that on every page, so every click there
+// deferred. Clicking the first is the same step as clicking either.
+// Placeholder hrefs don't count: a table of `<a href="#">Delete</a>` rows is many actions, not one destination.
+const sameHref = (loc) => loc.evaluateAll((els) => els.every((e) => {
+  const raw = (e.getAttribute("href") ?? "").trim();
+  return e.tagName === "A" && raw && raw !== "#" && !/^javascript:/i.test(raw) && e.href === els[0].href;
+}));
 async function one(cands) {
   for (const loc of cands) {
     if ((await loc.count()) === 1) return loc;
   }
+  for (const loc of cands) {
+    if ((await loc.count()) > 1 && (await sameHref(loc))) return loc.first();
+  }
   return null;
+}
+
+// A click that sets off a navigation can throw after the click landed: a cross-origin redirect detaches the
+// frame Playwright was waiting on. Returning false then would send an already-clicked step to the model, which
+// clicks it again. So a navigation error after the main frame navigated counts as clicked. Anything else still
+// defers: an SPA's pushState also fires framenavigated, and a click an overlay blocked until timeout must not
+// pass as done because the URL changed meanwhile.
+async function click(page, loc) {
+  let navigated = false;
+  const seen = (f) => { if (f === page.mainFrame()) navigated = true; };
+  page.on("framenavigated", seen);
+  try {
+    await loc.click({ timeout: T });
+  } catch (e) {
+    if (!navigated || !/navigat|detached|closed|destroyed/i.test(e.message) || /Timeout/.test(e.name)) throw e;
+  } finally {
+    page.off("framenavigated", seen);
+  }
+  await settle(page);
+}
+
+// A click's effect often lands after the click returns: a LiveView or SPA navigation is a websocket round trip
+// and a DOM swap, with no page load for Playwright to wait on. Returning at once let the next step, or a focus
+// check, run against the page being left (a real run read a toast recorder on /sites/new before /sites had
+// rendered). So wait for the DOM to go quiet: up to 1s for the first change, then 300ms with none, 3s at most.
+// A full navigation destroys the page mid-wait; then wait for the new page's load instead.
+const QUIET = () => new Promise((done) => {
+  let t = setTimeout(finish, 1000);
+  const cap = setTimeout(finish, 3000);
+  const mo = new MutationObserver(() => { clearTimeout(t); t = setTimeout(finish, 300); });
+  mo.observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
+  function finish() { mo.disconnect(); clearTimeout(t); clearTimeout(cap); done(true); }
+});
+async function settle(page) {
+  try {
+    await page.evaluate(QUIET);
+  } catch {
+    await page.waitForLoadState("load", { timeout: 10_000 }).catch(() => {});
+  }
 }
 
 const clickable = (page, name, noun) => [
@@ -77,6 +128,7 @@ const resolve = (ctx, ref) => {
 };
 
 const url = (ctx, p) => new URL(p, ctx.base).href;
+const words = (t) => new RegExp(`${/^\w/.test(t) ? "(?<!\\w)" : ""}${rx(t)}${/\w$/.test(t) ? "(?!\\w)" : ""}`);
 // `I am on the "Sign In" page` needs the project's route map. No entry means this helper can't answer, which is
 // a defer — the model knows how to find a page by name.
 const route = (ctx, name) => ctx.routes?.[name];
@@ -100,7 +152,7 @@ export const GENERIC = [
   // pass still absorbs the wording drift measured across the spec corpus, while the exact pass rescues a name
   // that a substring would find twice. A name belonging to two genuinely different elements defers.
   [/^I (?:click|press|tap)(?: on)?(?: the)? "([^"]+)"(?: (button|link|control|option|tab|element|item|icon))?$/i,
-    (page, m) => act(clickable(page, m[1], m[2]), (loc) => loc.click({ timeout: T }))],
+    (page, m) => act(clickable(page, m[1], m[2]), (loc) => click(page, loc))],
 
   [/^I (?:fill in|enter|type)(?: the)? "([^"]+)" (?:with|into|in) "([^"]*)"$/i,
     (page, m) => act(field(page, m[1]), (loc) => loc.fill(m[2], { timeout: T }))],
@@ -149,6 +201,20 @@ export const GENERIC = [
       await loc.waitFor({ state: "hidden", timeout: T });
       return true;
     }],
+  // Plain text, anywhere on the page. jev-run.js answered these from the page text all along; without them here
+  // the Claude runner paid a model request for each one, and they are among the most common steps there are.
+  // Several matches are fine for "see": any visible one is the text being there. The text has to stand as
+  // words, matched case-sensitively: a plain substring would let "Saved" pass on "Unsaved changes" and
+  // "1 item" on "11 items".
+  [/^I should see(?: the text)? "([^"]+)"(?: on the page)?$/i, (page, m) =>
+    page.getByText(words(m[1])).filter({ visible: true }).first().waitFor({ state: "visible", timeout: T })],
+  [/^I should not see(?: the text)? "([^"]+)"(?: on the page)?$/i, async (page, m) => {
+    const loc = page.getByText(words(m[1])).filter({ visible: true });
+    await loc.first().waitFor({ state: "hidden", timeout: T });
+    if ((await loc.count()) > 0) throw new Error(`"${m[1]}" is still visible`);
+  }],
+  [/^the (?:current )?URL should (not )?contain "([^"]+)"$/i, (page, m) =>
+    page.waitForURL((u) => u.href.includes(m[2]) !== Boolean(m[1]), { timeout: T })],
   [/^I should be on the "([^"]+)" page$/i, (page, m, ctx) => {
     const r = route(ctx, m[1]);
     return r ? page.waitForURL((u) => u.pathname.startsWith(r), { timeout: T }) : false;
