@@ -4,6 +4,11 @@ Before each `record` call, capture the page and attach it:
    `filename: "{run dir}/shots/<slug>-<n>.png"`
 2. add `--screenshot {run dir}/shots/<slug>-<n>.png` to the record command
 
+With more than one actor on the page, take it from the prefix of whoever is at the keyboard
+and name the file `<slug>-<n>-<actor>.png`, the actor lowercased. Someone reading the filmstrip
+has no other way to tell whose screen a frame is, and that is the one thing a two-actor
+scenario exists to show.
+
 `<slug>` is the scenario name lowercased with every run of non-alphanumeric characters replaced
 by a single hyphen. `<n>` counts the steps you run in that scenario from 1, Background steps
 included — it only has to make the filename unique, nothing reads it back.

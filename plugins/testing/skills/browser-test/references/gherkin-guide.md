@@ -122,6 +122,76 @@ A project can run specs with the Jev runner, a fast model that picks from what's
 - **Assert what's on the page.** Say what the page shows (`Then I should see "Signing In…"`), not how it looks (`the button should show a loading state`).
   - Expectations about colors, layout, HTML attributes, or a state that only lasts while a request is in flight always go to a Claude runner. Write them only when that's really what's being tested.
 
+### Assume two people are on the page
+
+Every feature that touches a surface where one person's action changes what another person is
+already looking at **must say what the second person sees**. Either write a scenario with
+`actors:`, or put a line in the Feature description saying why one viewer is the whole story —
+a read-only page, a single-user flow, a form only its author can see.
+
+A shared record open on two screens is the ordinary case for anything a team operates: two
+people at a front desk, a manager and a supervisor, the same person on a laptop and a phone. A
+suite where every scenario has exactly one viewer tests a product nobody runs.
+
+#### Declaring the actors
+
+`actors:` is a directive beside `testdata:` — two-space indented, in the feature description,
+before the prose. It names them in order, and each name gets its own browser with its own
+cookie jar.
+
+```gherkin
+Feature: Two managers race the same check-in
+  testdata: create location "Front Desk Camp" --with-admin
+  testdata: create manager $location_id --role=admin --email=dana@test.local
+  testdata: create manager $location_id --role=admin --email=sam@test.local
+  actors: Dana, Sam
+```
+
+Name them after people, not roles. `actors: Dana, Sam` reads; `actors: manager_1, manager_2` is
+a variable name wearing a hat, and in a report filmstrip you cannot tell which screen you are
+looking at.
+
+#### Handing over the keyboard
+
+One new step phrasing, and it is the only one:
+
+```gherkin
+Given Dana is at the keyboard
+When Sam is at the keyboard
+```
+
+Every step after it belongs to that actor, until the next handoff. **`I` always means whoever is
+at the keyboard**, so every other phrasing in this guide works unchanged — there is no
+actor-prefixed twin of `When I click the "Save" button` to learn or to write.
+
+Sign each actor in with ordinary steps, in `Background`, so it lands in the step record and the
+filmstrip:
+
+```gherkin
+  Background:
+    Given Dana is at the keyboard
+    And I am signed in as "dana@test.local" with password "password"
+    And I am on the "Calendar" page
+    And Sam is at the keyboard
+    And I am signed in as "sam@test.local" with password "password"
+    And I am on the "Calendar" page
+```
+
+#### Rules that keep a two-actor spec honest
+
+- **Quote each actor's own account.** Where test data creates them, two commands of the same
+  kind emit the same JSON keys and the variable scope is flat, so the second silently wins
+  `$email`. Pin each one with an explicit flag and refer to that address.
+- **The other actor's screen changes a beat later.** A push over a websocket, a poll, a
+  re-render — none of it is synchronous with the first actor's click. An assertion made right
+  after a handoff is allowed to retry for up to ~15 seconds before failing.
+- **Say what the second person sees, not that nothing broke.** `Then I should see` the new state
+  is the test; the absence of an error is not.
+- **Order the handoffs deliberately, and say why in the prose.** Which actor opened the dialog
+  first is usually the whole test. A reader who cannot tell why the handoffs fall where they do
+  cannot repair the spec when it breaks.
+- Three actors work the same way and cost a third browser. Two is almost always the test.
+
 ### Navigation (Given)
 
 ```gherkin
