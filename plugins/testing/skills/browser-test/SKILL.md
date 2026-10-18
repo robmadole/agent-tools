@@ -1,7 +1,7 @@
 ---
 name: browser-test
-description: "Orchestrate QA browser testing via Gherkin specs and Playwright, with opt-in focus checks (accessibility, responsive design), an optional fast Jev runner, and project step helpers that run without a model request."
-version: 2.5.0
+description: "Orchestrate QA browser testing via Gherkin specs and Playwright, with two-actor scenarios for shared pages, opt-in focus checks (accessibility, responsive design), an optional fast Jev runner, and project step helpers that run without a model request."
+version: 2.6.0
 ---
 
 # Browser Test — QA Testing with Gherkin Specs
@@ -282,6 +282,7 @@ Analyze the gathered context and generate Gherkin `.feature` files:
 - Do NOT include CSS selectors or implementation details in steps
 - Think from the user's perspective, not the developer's
 - **Every feature file must have `testdata:` directives** — Determine what test data each feature needs and add the appropriate `testdata:` lines in the feature description (after the `Feature:` keyword, indented with 2 spaces). Consult the `testdata:` section of the gherkin guide and the furtherSetup file for available commands. Choose the lightest data setup that satisfies the scenarios (e.g., don't use `exemplar default` when `create location` suffices).
+- **Every feature must say what a second viewer sees** — when a feature touches a surface where one person's action changes what another person already has on screen, it either carries an `actors:` directive and a scenario that hands the keyboard over, or states in the Feature description why one viewer is the whole story. See "Assume two people are on the page" in the guide. A suite where every scenario has exactly one viewer tests a product nobody runs, and the gap is invisible in a green report.
 
 ---
 
@@ -350,9 +351,23 @@ If a testdata command fails (non-zero exit), stop processing that feature file, 
 
 If no `testdata:` lines are present, proceed normally.
 
+### Read the `actors:` directive
+
+A feature file may carry one `actors:` line in the same description block as `testdata:`, naming the people in the scenarios in order — `actors: Dana, Sam`. It is not a testdata command and nothing is executed for it; it says how many browsers that file needs and what each one is called.
+
+A file with an `actors:` line:
+
+- takes **one Playwright instance per actor it names**, which changes how Phase 2 batches it (below),
+- skips the Jev runner (above),
+- gets `{actors}` in its dispatch, pairing each name with its instance's prefix in the order the directive lists them.
+
+A file with no `actors:` line behaves exactly as it always has: one instance, and `{actors}` is `(none)`.
+
 ### Jev pass (when `runner` is `jev`)
 
 Skip this section when `runner` is `claude` or unset, or when the operator chose any focus in Setup step 0c.
+
+Skip it as well for any **individual feature file carrying an `actors:` directive**, whatever `runner` says, and say so in one line. `jev-run.js` drives one browser and has no notion of a second actor, so those files go straight to the Claude runner below. The rest of the run still goes through Jev.
 
 1. **Write the inputs.** Use the Write tool, not the shell.
    - Once per run, when `jev.routes` is set, write `jev.routes` to `{directory}/tmp/jev/routes.json`.
@@ -385,9 +400,9 @@ Skip this section when `runner` is `claude` or unset, or when the operator chose
 
 There are 3 Playwright MCP server instances available, whose tool prefixes you recorded in the Prerequisites. Execute feature files concurrently by spawning one `Agent` subagent per feature file.
 
-1. Batch the files into groups of up to 3
-2. For each batch, spawn up to 3 `Agent` subagents **concurrently** (in a single message with multiple tool calls)
-3. Each subagent gets a distinct instance: the 1st, 2nd, and 3rd tool prefix you recorded
+1. Batch the files so that each batch uses at most 3 instances. A file with an `actors:` directive needs one instance per actor it names; every other file needs one. So three single-actor files fill a batch, and so do one two-actor file and one single-actor file.
+2. For each batch, spawn one `Agent` subagent per **feature file** — not per instance — **concurrently** (in a single message with multiple tool calls)
+3. Hand each subagent its own instances, taking prefixes in the order you recorded them and never giving the same prefix to two subagents in one batch. A single-actor file gets one. A two-actor file gets two, paired with its actor names in the order `actors:` lists them.
 4. **Write the runner instructions once per pass**, before the first batch, not into every dispatch:
 
    ```bash
@@ -416,6 +431,7 @@ There are 3 Playwright MCP server instances available, whose tool prefixes you r
 
    - {file path}: <the feature file to execute>
    - {playwright tool prefix}: <the assigned instance's full tool prefix, including the trailing __>
+   - {actors}: <see below, or "(none)">
    - {report command}: <see below>
    - {helper context}: <see below>
    - {scenarios}: <see below, or "(empty: run every scenario)">
@@ -424,7 +440,8 @@ There are 3 Playwright MCP server instances available, whose tool prefixes you r
    ```
 
    The per-runner values:
-   - `{playwright tool prefix}` — e.g. `mcp__plugin_testing_playwright-1__`
+   - `{playwright tool prefix}` — e.g. `mcp__plugin_testing_playwright-1__`. For a file with `actors:`, this is the **first** actor's instance; the runner reads the rest from `{actors}`.
+   - `{actors}` — for a file with an `actors:` directive, one line per actor pairing its name with its instance's full prefix, in the order the directive lists them, e.g. `Dana = mcp__plugin_testing_playwright-1__` then `Sam = mcp__plugin_testing_playwright-2__`. Otherwise `(none)`.
    - `{testdata context}` — if this file had `testdata:` directives, the resolved data (IDs, credentials, etc.) as a "TEST DATA" block the runner can reference when interpreting steps. Otherwise "(none)".
    - `{helper context}` — a JSON object literal the runner pastes into its `page.__runStep` calls: `{"root": "<project root>", "base": "<base URL>", "values": {<this feature's resolved testdata, flattened>}}`. Use the values from the testdata pass that ran **for this dispatch** — on a Jev run the testdata was re-run before the fallback, so the Jev pass's values are stale and would point the runner at records that no longer exist. With no testdata, `{"root": "<project root>", "base": "<base URL>", "values": {}}`. `root` is the absolute path of the directory holding `.browser-tests.json`: each runner gets a fresh tab, and the bridge in that tab finds the project's helpers from the server's working directory, which isn't always the project.
    - `{scenarios}` — in a Jev run, the leftover scenario names from that file, one bullet each. Otherwise empty, which runs every scenario.
@@ -837,6 +854,7 @@ Analyze the test results and existing specs to identify testing gaps:
    - **Edge cases** — empty states, boundary values, special characters, long inputs
    - **Related features** — if testing sign-in, what about sign-out? password reset?
    - **Interaction patterns** — keyboard navigation, mobile viewport, rapid actions
+   - **Concurrent sessions** — a second person on the same page: who wins a race, what the loser is told, and what a page owes someone whose data changed underneath them
 3. Write up to 4 new `.feature` files directly to `{directory}/specs/{category}/`
 4. Follow the same guidelines from Phase 1
 

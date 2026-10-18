@@ -165,8 +165,8 @@ export function claimRun(directory) {
 // copy the template out through its own output: about 20k characters per pass, a long wait before any agent
 // started, and every chance to mangle the template on the way. The per-runner values stay in braces; each
 // runner's short dispatch prompt lists its own.
-const PER_RUNNER = ["{file path}", "{playwright tool prefix}", "{report command}", "{helper context}", "{scenarios}",
-                    "{testdata context}", "{finding command}"];
+const PER_RUNNER = ["{file path}", "{playwright tool prefix}", "{actors}", "{report command}", "{helper context}",
+                    "{scenarios}", "{testdata context}", "{finding command}"];
 export function writeRunner(runDir, { pass, config, shots, foci }) {
   if (!["functional", "focus"].includes(pass)) die("--pass must be functional or focus");
   const skill = path.join(import.meta.dir, "..");
