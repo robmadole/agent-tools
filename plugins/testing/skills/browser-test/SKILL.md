@@ -1,7 +1,7 @@
 ---
 name: browser-test
 description: "Orchestrate QA browser testing via Gherkin specs and Playwright, with opt-in focus checks (accessibility, responsive design), an optional fast Jev runner, and project step helpers that run without a model request."
-version: 2.5.0
+version: 2.6.0
 ---
 
 # Browser Test — QA Testing with Gherkin Specs
@@ -18,7 +18,7 @@ Underneath both runners sits `{directory}/playwright-helpers.js`: step phrasings
 
 ## Modes of operation
 
-Determine from $ARGUMENTS what mode of operation we'll be in. If you cannot deduce this ask the user directly: "Would you like to create or run existing tests?"
+Determine from $ARGUMENTS what mode of operation we'll be in — on hosts that don't substitute that variable (e.g. OpenCode), take the mode from the operator's request text instead. If you cannot deduce this ask the user directly: "Would you like to create or run existing tests?"
 
 ### "Create"
 
@@ -32,12 +32,13 @@ The operator is asking to run tests that already exist in the `.browser-tests.js
 
 Before proceeding, verify all of the following. If any check fails, stop immediately with the corresponding message.
 
-1. **Playwright MCP** — Find the three Playwright MCP instances and note the **full tool prefix of each one**. Don't assume the prefix: it depends on where the servers are configured.
-   - From the testing plugin's own `.mcp.json`, tools are named `mcp__plugin_testing_playwright-1__browser_navigate` and so on, so the prefix is `mcp__plugin_testing_playwright-1__`.
-   - From the project's `.mcp.json`, they are `mcp__playwright-1__browser_navigate`, so the prefix is `mcp__playwright-1__`.
+1. **Playwright MCP** — Find the three Playwright MCP instances and note the **full tool prefix of each one**. Don't assume the prefix: it depends on the host and on where the servers are configured.
+   - In Claude Code from the testing plugin's own `.mcp.json`, tools are named `mcp__plugin_testing_playwright-1__browser_navigate` and so on, so the prefix is `mcp__plugin_testing_playwright-1__`.
+   - In Claude Code from the project's `.mcp.json`, they are `mcp__playwright-1__browser_navigate`, so the prefix is `mcp__playwright-1__`.
+   - In OpenCode (servers registered in the project's `opencode.json`), they are `playwright_1_browser_navigate` and so on — the normalized server name and the tool joined by `_`, with no `mcp__` wrapper — so the prefix is `playwright_1_`.
    - Other hosts may name them differently again.
 
-   Look through the tools you have for names ending in `__browser_navigate`. If none are listed, they may be deferred: find them with ToolSearch, one search per instance (queries `+playwright-1 browser_navigate`, `+playwright-2 browser_navigate`, `+playwright-3 browser_navigate`, `max_results` 3 each), in one turn. A single `+playwright` search fills its result cap with one server's tools and can't show whether the others exist. Any tool returned for an instance proves it exists; its prefix is everything before `browser_`. You need three distinct prefixes, one per instance. Record them in order; they become `{playwright tool prefix}` for the runner subagents.
+   Look through the tools you have for names ending in `__browser_navigate` (Claude Code) or `_browser_navigate` (OpenCode). On Claude Code, if none are listed, they may be deferred: find them with ToolSearch, one search per instance (queries `+playwright-1 browser_navigate`, `+playwright-2 browser_navigate`, `+playwright-3 browser_navigate`, `max_results` 3 each), in one turn. A single `+playwright` search fills its result cap with one server's tools and can't show whether the others exist. On OpenCode there is no deferred-tool search: if an instance's tools are missing, that server is not connected — say so and work with the instances that answer, per the next paragraph. Any tool returned for an instance proves it exists; its prefix is everything before `browser_`. You need three distinct prefixes, one per instance. Record them in order; they become `{playwright tool prefix}` for the runner subagents.
 
    **If fewer than three respond**, work with what you have rather than stopping — an instance can drop mid-session. Tell the operator how many you found, and reduce the batch size in Phase 2 to that number, running feature files in sequence on the instances that answer. Stop only when none respond.
 
@@ -62,7 +63,7 @@ Before proceeding, verify all of the following. If any check fails, stop immedia
 
    > This skill requires Bun to run the validation script. Install it from https://bun.sh before running `/browser-test`.
 
-3. **Agent tool** — Verify that the `Agent` tool is available (used for concurrent test execution and audit subagents).
+3. **Subagent tool** — Verify that your host's subagent-spawning tool is available (used for concurrent test execution and audit subagents): the `Agent` tool in Claude Code, the `subagent` tool in OpenCode (spawn the `general` agent).
 
    Both runners are headless: the MCP servers pass `--headless`, and `jev-run.js` launches headless unless given `--headed`. A dozen browser windows opening and stealing focus mid-run is the thing that makes a full suite unpleasant to sit through, and nothing in either runner needs a visible window — screenshots, network capture and the accessibility snapshot all work without one. To watch a run, pass `--headed` to `jev-run.js`; for the Claude runner, drop `--headless` from the plugin's `.mcp.json`.
 
@@ -76,7 +77,7 @@ Before proceeding, verify all of the following. If any check fails, stop immedia
 
 ## Bash discipline
 
-Every Bash call you make in this skill is subject to a permissions check. Operators pre-allowlist commands by their bare verb (e.g. `Bash(mkdir:*)`, `Bash(bun:*)`, `Bash(git diff:*)`). Clever chaining defeats the allowlist and forces the operator to babysit the run.
+Every Bash call you make in this skill is subject to a permissions check. Operators pre-allowlist commands — Claude Code by their bare verb (e.g. `Bash(mkdir:*)`, `Bash(bun:*)`, `Bash(git diff:*)`), OpenCode with `permissions` rules over the `shell` command text (e.g. a rule allowing `bun *`). Clever chaining defeats the allowlist and forces the operator to babysit the run.
 
 **Hard rules — apply to every phase, including testdata processing, setup, and validation:**
 
@@ -105,7 +106,7 @@ After informing them of this, proceed to go through `references/setup.md` in ord
 
 If it exists, load `directory`, `baseURL`, `furtherSetup`, and the optional `verificationTools`, `runner`, `reports`, and `jev` from it.
 
-`runner` (optional) is `"claude"` (the default) or `"jev"`. `jev` (optional) holds the Jev runner's knowledge of the app, which Claude runners get from reading `furtherSetup`:
+`runner` (optional) is `"claude"` (the default) or `"jev"`. The `claude` runner means the session's own model driving Playwright in a subagent — the name is the mode, not the brand, so on OpenCode it is whatever model the session runs. `jev` (optional) holds the Jev runner's knowledge of the app, which Claude runners get from reading `furtherSetup`:
 - `routes`: page names to paths, e.g. `{"Sign In": "/sessions/sign-in"}`.
 - `values`: labeled values steps may refer to, e.g. `{"password": "password", "free account email": "free@example.com"}`.
 - `envFile`: a file holding `TYPESAFE_API_KEY`, if it isn't in the environment.
@@ -114,7 +115,7 @@ If it exists, load `directory`, `baseURL`, `furtherSetup`, and the optional `ver
 
 If `furtherSetup` is set, read that file (it is a path relative to the repository root). This provides project-specific testing context (test credentials, seed data, application quirks) that should be substituted into the runner subagent prompt and referenced during spec generation.
 
-`verificationTools` (optional) is an array of MCP tool names (or name prefixes) that runner subagents may use — in addition to Playwright — to verify external system state in `Then` steps (e.g. `["mcp__stripe__stripe_api_read", "mcp__stripe__stripe_api_search"]`). Treat these as **read-only** verification tools. If the key is absent or empty, runners stay Playwright-only. This value is substituted into the runner prompt as `{verification tools}` during agentic dispatch.
+`verificationTools` (optional) is an array of MCP tool names (or name prefixes) that runner subagents may use — in addition to Playwright — to verify external system state in `Then` steps (e.g. `["mcp__stripe__stripe_api_read", "mcp__stripe__stripe_api_search"]` in Claude Code naming, `["stripe_stripe_api_read", "stripe_stripe_api_search"]` in OpenCode naming). Treat these as **read-only** verification tools. If the key is absent or empty, runners stay Playwright-only. This value is substituted into the runner prompt as `{verification tools}` during agentic dispatch.
 
 ### 0b. Choose report formats
 
@@ -149,7 +150,7 @@ or infer one from `.browser-tests.json`.
 
 1. List `{absolute path to this skill}/foci/*.md`. The `vendor/` directory under it holds no foci. Read each
    file's frontmatter: `name`, `label`, `description`.
-2. Ask with one `AskUserQuestion` call, `multiSelect: true`:
+2. Ask with one multi-select question — `AskUserQuestion` with `multiSelect: true` in Claude Code, the `question` tool with `multiple: true` in OpenCode:
    - question: "Run any focus checks too? They replay every scenario after the functional run, so the run takes longer."
    - header: "Foci"
    - first option: label "Nothing extra", description "Functional run only. No replay, no focus checks."
@@ -158,11 +159,12 @@ or infer one from `.browser-tests.json`.
    - then one option per focus: its `label`, with its `description`
    - Nothing starts checked; that is how multiSelect works, and it is the point. A focus runs only when the
      operator checks it.
-   - An `AskUserQuestion` question holds at most 4 options, and "Nothing extra" takes one. With more than 3
-     foci, put "Nothing extra" and the first 3 in the first question, and the rest in further questions of up
-     to 4 in the same call, each with question "More focus checks?" and header "Foci (cont.)".
-3. A dismissed question is not an answer. Ask again, once, with the same `AskUserQuestion`. If it is dismissed
-   a second time, stop and ask in plain text which foci to run.
+   - A question holds at most 4 options (an OpenCode `question` call can take more, but keep this
+     chunking), and "Nothing extra" takes one. With more than 3 foci, put "Nothing extra" and the first 3 in
+     the first question, and the rest in further questions of up to 4 in the same call, each with question
+     "More focus checks?" and header "Foci (cont.)".
+3. A dismissed question is not an answer. Ask again, once, with the same question (the host's question tool).
+   If it is dismissed a second time, stop and ask in plain text which foci to run.
    "Nothing extra", nothing checked, or an "Other" answer that names no focus all mean no foci this run. If
    "Nothing extra" is checked along with a focus, run the checked focus and say so in one line: checking a
    focus is the deliberate act.
@@ -174,9 +176,9 @@ or infer one from `.browser-tests.json`.
 
 ### 1. What to test
 
-If we are in "Run" mode and we weren't given the tests to run in $ARGUMENTS, ask the operator now.
+If we are in "Run" mode and we weren't given the tests to run (in $ARGUMENTS, or the operator's request text on hosts without it), ask the operator now.
 
-If we are in "Create" mode and we weren't given the subject to test in $ARGUMENTS, ask the operator what they want to test. Accept one of:
+If we are in "Create" mode and we weren't given the subject to test (in $ARGUMENTS, or the operator's request text on hosts without it), ask the operator what they want to test. Accept one of:
 
 - **PR diff** — You will run `git diff` to identify changed files and features
 - **Feature area** — The operator names a feature (e.g., "reservation calendar", "sign-in flow")
@@ -328,7 +330,7 @@ If any `testdata:` lines are found:
 1. **Consult the furtherSetup file** for instructions on how to execute testdata commands. The furtherSetup file (from `.browser-tests.json`) contains project-specific details: what tool to run, how to invoke it, and where it executes (e.g., inside a container).
 2. **Execute each `testdata:` line in order** using the Bash tool, following the instructions from the furtherSetup file. Each line's content (after the `testdata: ` prefix, trimmed) is the command arguments.
 
-   **Strictly one testdata command per Bash call.** Do not batch them with `&&`, do not loop with `for`, do not write a Python/Bun/Node helper that runs them all, and do not pipe one's output into the next. The operator allowlists the testdata tool by its verb (e.g. `Bash(<your-testdata-tool>:*)`); chaining or scripting around it forces a permission prompt and stalls the run. If two testdata lines have no dependency on each other, you may issue them as parallel Bash calls in a single message — but each one is still its own call.
+   **Strictly one testdata command per Bash call.** Do not batch them with `&&`, do not loop with `for`, do not write a Python/Bun/Node helper that runs them all, and do not pipe one's output into the next. The operator allowlists the testdata tool by its verb (Claude Code: `Bash(<your-testdata-tool>:*)`; OpenCode: a matching `shell` permission rule); chaining or scripting around it forces a permission prompt and stalls the run. If two testdata lines have no dependency on each other, you may issue them as parallel Bash calls in a single message — but each one is still its own call.
 3. **Capture the JSON output** from each command's stdout.
 4. **Build a variable scope** from the JSON output. Top-level keys from each command's JSON become `$key_name` variables. When a later `testdata:` line references `$variable`, **you (Claude) substitute the literal value into the command string before issuing the Bash call.** Do not rely on shell expansion — the call should contain the resolved value, not a `$`-prefixed token.
 5. **Build a human-readable testdata context block** for the runner. For each testdata command that was executed, summarize its output in plain language that helps the runner interpret generic steps. Label each entity with its role or purpose, and include credentials where applicable. For example:
@@ -383,10 +385,10 @@ Skip this section when `runner` is `claude` or unset, or when the operator chose
 
 ### Concurrent execution via subagents
 
-There are 3 Playwright MCP server instances available, whose tool prefixes you recorded in the Prerequisites. Execute feature files concurrently by spawning one `Agent` subagent per feature file.
+There are 3 Playwright MCP server instances available, whose tool prefixes you recorded in the Prerequisites. Execute feature files concurrently by spawning one subagent per feature file (the `Agent` tool in Claude Code, the `subagent` tool in OpenCode).
 
 1. Batch the files into groups of up to 3
-2. For each batch, spawn up to 3 `Agent` subagents **concurrently** (in a single message with multiple tool calls)
+2. For each batch, spawn up to 3 subagents **concurrently** (in a single message with multiple tool calls)
 3. Each subagent gets a distinct instance: the 1st, 2nd, and 3rd tool prefix you recorded
 4. **Write the runner instructions once per pass**, before the first batch, not into every dispatch:
 
@@ -424,7 +426,7 @@ There are 3 Playwright MCP server instances available, whose tool prefixes you r
    ```
 
    The per-runner values:
-   - `{playwright tool prefix}` — e.g. `mcp__plugin_testing_playwright-1__`
+   - `{playwright tool prefix}` — e.g. `mcp__plugin_testing_playwright-1__` in Claude Code, `playwright_1_` in OpenCode
    - `{testdata context}` — if this file had `testdata:` directives, the resolved data (IDs, credentials, etc.) as a "TEST DATA" block the runner can reference when interpreting steps. Otherwise "(none)".
    - `{helper context}` — a JSON object literal the runner pastes into its `page.__runStep` calls: `{"root": "<project root>", "base": "<base URL>", "values": {<this feature's resolved testdata, flattened>}}`. Use the values from the testdata pass that ran **for this dispatch** — on a Jev run the testdata was re-run before the fallback, so the Jev pass's values are stale and would point the runner at records that no longer exist. With no testdata, `{"root": "<project root>", "base": "<base URL>", "values": {}}`. `root` is the absolute path of the directory holding `.browser-tests.json`: each runner gets a fresh tab, and the bridge in that tab finds the project's helpers from the server's working directory, which isn't always the project.
    - `{scenarios}` — in a Jev run, the leftover scenario names from that file, one bullet each. Otherwise empty, which runs every scenario.
@@ -578,7 +580,7 @@ Record each clarification the same way as a repair, labeled `clarification`.
 
 ### Independent audit
 
-After completing all repairs and clarifications, spawn a single `Agent` subagent to audit your changes. Read `references/auditor-prompt.md` and substitute the `{repairs}` template variable with the list of changes you made. For each change, include:
+After completing all repairs and clarifications, spawn a single subagent to audit your changes (the `Agent` tool in Claude Code, the `subagent` tool in OpenCode). Read `references/auditor-prompt.md` and substitute the `{repairs}` template variable with the list of changes you made. For each change, include:
 - The spec file path (original location)
 - The scenario name
 - Whether it is a `repair` or a `clarification`

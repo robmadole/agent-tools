@@ -10,7 +10,7 @@ FEATURE FILE: {file path}
 
 PLAYWRIGHT TOOL PREFIX: {playwright tool prefix}
 
-All your browser automation tools start with that prefix — the navigate tool is `{playwright tool prefix}browser_navigate`, and the others follow the same pattern. Use ONLY browser tools with this exact prefix, to maintain isolation from other concurrent executors. They may be deferred tools: load the ones you need with ToolSearch (`select:<name>,<name>`) before first use, batching them into one call. The one exception to the prefix rule is the read-only verification tools listed under "Verification tools" below (if any) — those are shared, non-browser MCP tools you may use for `Then` assertions.
+All your browser automation tools start with that prefix — the navigate tool is `{playwright tool prefix}browser_navigate`, and the others follow the same pattern. Use ONLY browser tools with this exact prefix, to maintain isolation from other concurrent executors. On Claude Code they may be deferred tools: load the ones you need with ToolSearch (`select:<name>,<name>`) before first use, batching them into one call. On OpenCode they are direct tools: call them by their full name, with no loading step. The one exception to the prefix rule is the read-only verification tools listed under "Verification tools" below (if any) — those are shared, non-browser MCP tools you may use for `Then` assertions.
 
 SCENARIOS TO RUN (if this list is empty, run every scenario in the file):
 
@@ -144,8 +144,8 @@ confirming a payment processor actually recorded a refund). Rules:
 
 - Use them ONLY for `Then` assertions, never to drive the scenario or mutate state. They
   are read-only.
-- These are deferred MCP tools: load each one with ToolSearch (`select:<tool_name>`) before
-  its first call.
+- On Claude Code these are deferred MCP tools: load each one with ToolSearch (`select:<tool_name>`)
+  before its first call. On OpenCode call them directly.
 - External effects triggered by the browser (webhooks, background jobs) may be **async**.
   If the expected state isn't there yet, retry/poll for up to ~15 seconds before failing.
 - When a `Then` step asserts external state, prefer comparing it against what the UI showed

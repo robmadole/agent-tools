@@ -1,6 +1,8 @@
 ---
 name: bug-hunter
 description: Run a structured, time/count-boxed bug hunt against a feature branch of a web app — fanning out parallel finders via a Claude Code Workflow, deciding each candidate with live browser verification (Playwright MCP), keeping a running list in persistent memory, and ending with a ReportFindings report where every confirmed bug has a LOW/MEDIUM/HIGH impact score, the shortest possible repro steps, and a screenshot of the error state. Use this whenever the user asks to "find bugs", "bug hunt", "QA this branch/feature", "test this feature for bugs", "poke holes in this UI", or sets a goal like "run until N bugs are found or T hours pass" — even if they don't say the word "bug-hunter".
+metadata:
+  opencode/autoinvoke: false
 ---
 
 # Bug Hunter
