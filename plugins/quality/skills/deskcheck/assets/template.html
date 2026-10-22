@@ -636,6 +636,10 @@ const threadsByRoot = new Map();
 // Composing is only possible when the branch has a PR to post against.
 const canComment = !!(DATA.comments && DATA.comments.url);
 
+// The reviewer's composer mode: the target they last picked in a line
+// composer's toggle ('comment' | 'note'). New composers open on it.
+let composeTarget = 'comment';
+
 // People the composer's @-autocomplete can offer (repo mentionables + everyone
 // on the PR). Empty ⇒ attachMentions() is a no-op.
 const MENTIONABLES = (DATA.comments || {}).mentionables || [];
@@ -1097,7 +1101,8 @@ function addLineComposer(row, file, line, side) {
     if (s.classList.contains('composer-row')) { s.querySelector('textarea').focus(); return; }
   }
   // With a PR you choose the target; without one, notes are the only option.
-  let target = canComment ? 'comment' : 'note';
+  // A PR's composer opens on whichever target the reviewer last picked.
+  let target = canComment ? composeTarget : 'note';
   const box = composeBox({
     submitLabel: target === 'note' ? 'Add note' : 'Comment',
     onCancel: () => tr.remove(),
@@ -1123,15 +1128,16 @@ function addLineComposer(row, file, line, side) {
       ? 'Note for yourself or Claude — never posted to GitHub'
       : 'Comment on this line…';
   };
-  if (canComment) box.prepend(targetToggle(applyTarget));
+  if (canComment) box.prepend(targetToggle(target, t => { composeTarget = t; applyTarget(t); }));
   applyTarget(target);
   const tr = commentRow(box, row);
   tr.classList.add('composer-row');
   insertAfterAnchor(row, tr);
 }
 
-// Segmented [PR comment | Private note] control; calls onChange('comment'|'note').
-function targetToggle(onChange) {
+// Segmented [PR comment | Private note] control, starting on `initial`;
+// calls onChange('comment'|'note').
+function targetToggle(initial, onChange) {
   const seg = el('div', 'compose-target');
   const mk = (val, label) => {
     const b = el('button', 'ct-opt'); b.type = 'button'; b.dataset.val = val;
@@ -1142,9 +1148,8 @@ function targetToggle(onChange) {
     };
     return b;
   };
-  const comment = mk('comment', 'PR comment');
-  comment.classList.add('on');
-  seg.append(comment, mk('note', 'Private note'));
+  seg.append(mk('comment', 'PR comment'), mk('note', 'Private note'));
+  seg.querySelector(`[data-val="${initial}"]`).classList.add('on');
   return seg;
 }
 
