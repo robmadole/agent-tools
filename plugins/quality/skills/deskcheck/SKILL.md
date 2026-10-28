@@ -408,11 +408,12 @@ unresolve** a thread from a button in its foot (opposite Reply) — it runs the
 GraphQL mutation, refreshes comments, and reloads.
 
 **Keyboard shortcuts** — a ⌨ button at the top-right (and the `?` key) opens a
-shortcuts panel: `j`/`k` move focus by hunk, `[`/`]` by section, `Space`
-collapses/expands the focused item, `m` marks it reviewed and advances, `Esc`
-closes the panel or clears focus. Focus lands on any reviewable node (section,
-file, or hunk) with a highlight outline; keys are ignored while typing in a
-comment composer.
+shortcuts panel. The keys walk one top-to-bottom checklist: a file's hunks,
+then the file, then the next file, and once a section's files are done, the
+section. `j`/`k` go to the next/previous item not yet reviewed, `m` marks the
+focused item reviewed and goes to the next, `Esc` closes the panel or clears
+focus. The focused item gets a highlight outline and is expanded if it was
+collapsed; keys are ignored while typing in a comment composer.
 
 ## Scripts
 

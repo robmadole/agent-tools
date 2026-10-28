@@ -569,11 +569,9 @@
   <div class="kbd-panel" role="dialog" aria-label="Keyboard shortcuts">
     <h2>Keyboard shortcuts</h2>
     <dl>
-      <dt><kbd>j</kbd> / <kbd>k</kbd></dt><dd>Next / previous hunk</dd>
-      <dt><kbd>[</kbd> / <kbd>]</kbd></dt><dd>Previous / next file</dd>
-      <dt><kbd>{</kbd> / <kbd>}</kbd></dt><dd>Previous / next section</dd>
-      <dt><kbd>Space</kbd></dt><dd>Collapse / expand the focused item</dd>
-      <dt><kbd>m</kbd></dt><dd>Mark focused item reviewed &amp; advance</dd>
+      <dt><kbd>j</kbd></dt><dd>Next thing to check off</dd>
+      <dt><kbd>k</kbd></dt><dd>Previous thing to check off</dd>
+      <dt><kbd>m</kbd></dt><dd>Mark it reviewed &amp; go to the next</dd>
       <dt><kbd>?</kbd></dt><dd>Toggle this help</dd>
       <dt><kbd>Esc</kbd></dt><dd>Close help / clear focus</dd>
     </dl>
@@ -2129,126 +2127,72 @@ function trackStickyOffsets() {
   });
 }
 // ---- Keyboard navigation -------------------------------------------------
-// Focus can land on any reviewable node — a section, file, or hunk — all of
-// which carry data-key and collapse the same way. j/k walk hunks (the reading
-// flow); [/] walk sections. Collapsing only hides a *-body (heads stay in
-// layout), so offsetParent cleanly excludes nodes inside a collapsed ancestor.
+// One checklist, worked top to bottom: a file's hunks, then the file, then the
+// next file, and once the section's files are done, the section itself. j/k
+// step to the next/previous item still to check off; m checks off the focused
+// item and steps on. Only nodes with their own mark button are items — a
+// single-hunk file's hunk has none, its file mark covers it.
 let kbdFocus = null;
 
-const visible = sel => [...document.querySelectorAll(sel)].filter(n => n.offsetParent);
+// A node's own mark button (data-mark-for === its key) — not a descendant's.
+const ownMark = n =>
+  n.querySelector('.mark[data-mark-for="' + CSS.escape(n.dataset.key || '') + '"]');
 
-function nearestToTop(list) {
-  let best = list[0], bestD = Infinity;
-  for (const n of list) {
-    const d = Math.abs(n.getBoundingClientRect().top);
-    if (d < bestD) { bestD = d; best = n; }
-  }
-  return best;
+// A file showing its rendered-markdown or changed-since-review view hides its
+// diff, hunks and all; you review it whole, so only the file is an item.
+const hidesHunks = n => n.matches('.file.md-rendered, .file.delta-mode');
+
+// Every item in checklist order: children before the container they sit in.
+function checklist() {
+  const out = [];
+  // owner is the item `root` belongs to (null at the top); recurse into its
+  // direct child items only, emitting each after its own children
+  const walk = (root, owner) => root.querySelectorAll('[data-key]').forEach(n => {
+    if (n.parentElement.closest('[data-key]') !== owner) return;
+    if (!hidesHunks(n)) walk(n, n);
+    if (ownMark(n)) out.push(n);
+  });
+  walk($('#content'), null);
+  return out;
 }
+
+// Done once it, or anything it sits in, is marked reviewed — a file mark
+// covers its hunks without marking them one by one.
+const done = n => !!n.closest('[data-key].reviewed');
 
 function setKbdFocus(n) {
   if (kbdFocus) kbdFocus.classList.remove('kbd-focus');
   kbdFocus = n;
-  if (n) { n.classList.add('kbd-focus'); n.scrollIntoView({ block: 'center' }); }
+  if (!n) return;
+  // open it and everything it sits in, so a hand-collapsed section can't hide it
+  for (let a = n; a; a = a.parentElement.closest('[data-key]')) a.classList.remove('collapsed');
+  n.classList.add('kbd-focus');
+  n.scrollIntoView({ block: 'center' });
 }
 
-// Step through `list`, skipping items already reviewed — you land on the next
-// thing that still needs review. The first press anchors on the nearest open
-// item; if nothing's open ahead, stay put rather than jump onto a reviewed one.
-function step(list, dir, cur) {
-  if (!list.length) return;
-  const open = n => !n.classList.contains('reviewed');
-  const i = cur ? list.indexOf(cur) : -1;
-  if (i >= 0) {                       // cur is still on-screen: walk from its slot
-    for (let j = i + dir; j >= 0 && j < list.length; j += dir)
-      if (open(list[j])) return setKbdFocus(list[j]);
-    return;
+// Step to the next (dir 1) or previous (dir -1) item not yet done. The first
+// press, with nothing focused, picks the first open item, in checklist order,
+// not already scrolled past. Checklist order matters here: a section's top is
+// always nearest the top of the screen, but its hunks come first.
+function move(dir) {
+  const list = checklist();
+  const i = kbdFocus ? list.indexOf(kbdFocus) : -1;
+  if (i < 0) {
+    const open = list.filter(n => !done(n));
+    const ahead = open.find(n => n.offsetParent && n.getBoundingClientRect().bottom > 0);
+    return (ahead || open[0]) && setKbdFocus(ahead || open[0]);
   }
-  // cur left the visible list — it was just marked and collapsed out of view (a
-  // single-hunk file collapses the whole file). Advance from cur's DOM position
-  // in reading order, NOT to the geometrically nearest open hunk: after the
-  // collapse the nearest one can be deeper in the next section, so 'm' would skip
-  // past that section's first hunk. compareDocumentPosition still works because a
-  // collapsed node stays in the DOM.
-  if (cur) {
-    const want = dir > 0 ? Node.DOCUMENT_POSITION_FOLLOWING
-                         : Node.DOCUMENT_POSITION_PRECEDING;
-    const ordered = dir > 0 ? list : [...list].reverse();
-    const next = ordered.find(n => open(n) && (cur.compareDocumentPosition(n) & want));
-    return next && setKbdFocus(next);
-  }
-  const first = nearestToTop(list.filter(open));   // first-ever press: no anchor
-  return first && setKbdFocus(first);
+  for (let j = i + dir; j >= 0 && j < list.length; j += dir)
+    if (!done(list[j])) return setKbdFocus(list[j]);
 }
 
-// first unreviewed visible <sel> inside a container — used to dive from a
-// coarser focus into its next child
-const firstOpenIn = (container, sel) =>
-  visible(sel).find(n => container.contains(n) && !n.classList.contains('reviewed'));
-
-// Going forward to a finer level while focused on a coarser container descends
-// into that container's first unreviewed child, rather than jumping to the
-// nearest one on screen. Otherwise step through siblings at this level.
-const moveHunk = dir => {
-  if (dir > 0 && kbdFocus && !kbdFocus.classList.contains('hunk')) {
-    const child = firstOpenIn(kbdFocus, '.hunk');   // a section or file → its first hunk
-    if (child) return setKbdFocus(child);
-  }
-  step(visible('.hunk'), dir, kbdFocus);
-};
-// [/] step whole files. ] from a section dives into its first file (descend);
-// [ from a hunk pops up to its containing file (ascend); otherwise sibling files.
-const moveFile = dir => {
-  if (dir > 0 && kbdFocus?.classList.contains('sec')) {
-    const child = firstOpenIn(kbdFocus, '.file');
-    if (child) return setKbdFocus(child);
-  }
-  if (dir < 0 && kbdFocus?.classList.contains('hunk')) {
-    const parent = kbdFocus.closest('.file');
-    if (parent) return setKbdFocus(parent);
-  }
-  step(visible('.file'), dir, kbdFocus && kbdFocus.closest('.file'));
-};
-// {/} step sections (rarer, so the shifted keys). { from a hunk/file pops up to
-// its containing section (ascend); otherwise sibling sections.
-const moveSection = dir => {
-  if (dir < 0 && kbdFocus && !kbdFocus.classList.contains('sec')) {
-    const parent = kbdFocus.closest('.sec');
-    if (parent) return setKbdFocus(parent);
-  }
-  step(visible('.sec'), dir, kbdFocus && (kbdFocus.closest('.sec')));
-};
-
-// A node's own mark button (data-mark-for === its key) — not a descendant's.
-function ownMark(n) {
-  return n.querySelector('.mark[data-mark-for="' + CSS.escape(n.dataset.key || '') + '"]')
-      || n.querySelector('.mark');
-}
-
+// m checks off the focused item — never unchecks — then steps on. Await the
+// toggle so the item finishes collapsing before the scroll to the next one.
 async function markCurrent() {
-  const hunks = visible('.hunk');
-  if (!kbdFocus) return hunks.length && setKbdFocus(nearestToTop(hunks));
-  // fall back to the containing file's (then section's) mark when the focused
-  // hunk has none of its own — single-hunk files and binaries render no hunk
-  // mark button, and that hunk is covered by the file mark anyway, so 'm' would
-  // otherwise be a dead key there
-  const btn = ownMark(kbdFocus)
-    || (kbdFocus.closest('.file') && ownMark(kbdFocus.closest('.file')))
-    || (kbdFocus.closest('.sec') && ownMark(kbdFocus.closest('.sec')));
-  const advanceHunk = kbdFocus.classList.contains('hunk');
-  // 'm' always marks reviewed — never toggles back off. Await the toggle so the
-  // item finishes collapsing (and the layout reflows) BEFORE we advance —
-  // otherwise the jump scrolls against the old layout and lands slightly off.
+  if (!kbdFocus) return move(1);
+  const btn = ownMark(kbdFocus);
   if (btn && !btn.classList.contains('on')) await toggle(btn.dataset.markFor);
-  if (advanceHunk) moveHunk(1);  // next unreviewed hunk, on the settled layout
-}
-
-// Space collapses/expands the focused node without touching its reviewed mark —
-// same class the header click toggles.
-function toggleCollapse() {
-  const hunks = visible('.hunk');
-  if (!kbdFocus) return hunks.length && setKbdFocus(nearestToTop(hunks));
-  kbdFocus.classList.toggle('collapsed');
+  move(1);
 }
 
 function toggleKbdHelp(force) { $('#kbd-overlay').classList.toggle('open', force); }
@@ -2270,10 +2214,7 @@ function initKeyboard() {
     }
     if (e.key === '?') { toggleKbdHelp(); return e.preventDefault(); }
     if (open) return;  // help panel eats nav keys while it's up
-    const act = { j: () => moveHunk(1), k: () => moveHunk(-1), m: markCurrent,
-                  ' ': toggleCollapse,
-                  '[': () => moveFile(-1), ']': () => moveFile(1),
-                  '{': () => moveSection(-1), '}': () => moveSection(1) }[e.key];
+    const act = { j: () => move(1), k: () => move(-1), m: markCurrent }[e.key];
     if (act) { act(); e.preventDefault(); }
   });
 }
