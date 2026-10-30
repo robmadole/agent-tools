@@ -27,6 +27,7 @@ The manifest schema follows `https://anthropic.com/claude-code/marketplace.schem
   - Mod (`hooks/register.tsx`): under the prompt, shows the running deskcheck review's URL as a link and its hunks-reviewed count, polled from `server.py`'s `/api/progress`. Picks the URL up from the `Serving on` line in tool output; hides when the server stops answering.
 - **`humanity`** — Agent to human interaction, or dealing with the wetware simians who walk on two legs.
   - `whoa-hang-on` — Stop and re-align a human who has lost the thread: backtrack from the last message and explain in a ladder of short, self-contained rungs, one per message, checking understanding at each rung before continuing.
+  - `one-at-a-time` — The human says a list of questions, notes, or decisions is too much. Break it into single items, rewrite each to stand alone (no cross-references, no thread shorthand), and hand them over one per message, waiting for an answer before the next.
   - `explain-it` — `/explain-it setup|new <name>|view [name]`: set a repo up for animated explainers, start one (asks what it explains, then writes an outline for the human to approve), or open one in the browser. A thin wrapper over the `@explain-it/core` CLI run through `npx`; the authoring rules come from `npx @explain-it/core guide`, not this skill.
 
 ## Adding a New Skill

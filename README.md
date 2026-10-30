@@ -58,6 +58,7 @@ Agent to human interaction, or dealing with the wetware simians who walk on two 
 | Skill | Description |
 |-------|-------------|
 | **whoa-hang-on** | Run `/whoa-hang-on` when you've lost the thread. The agent stops, backtracks from its last message, and catches you up as a ladder of short, self-contained rungs, one per message, checking you understand each rung before climbing to the next. |
+| **one-at-a-time** | Run `/one-at-a-time` when a list of questions, notes, or decisions is too much at once. The agent breaks it into single items, rewrites each one to stand alone with no cross-references or shorthand, and hands them over one per message, waiting for your answer before the next. |
 | **explain-it** | Animated, step-through explainers of a technical design. `/explain-it setup` prepares the repo, `/explain-it new <name>` starts one (it asks what design it explains, then writes an outline for you to approve before animating), and `/explain-it view [name]` opens it in the browser. Wraps the `@explain-it/core` CLI via `npx`, so nothing needs installing. |
 
 ## Development
