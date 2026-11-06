@@ -30,6 +30,11 @@ HUNK_RE = re.compile(r'^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@')
 
 
 def _git(repo, *args):
+    # Rename pairing depends on which paths share the pathspec, so a bulk diff
+    # and a one-file diff would give the same file different hunk IDs. With
+    # renames off, every diff shows a file the same way: added or deleted whole.
+    if args[:1] == ('diff',):
+        args = ('diff', '--no-renames', *args[1:])
     return subprocess.run(
         ['git', '-C', repo, *args], capture_output=True, text=True, check=True
     ).stdout

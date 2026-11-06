@@ -64,8 +64,8 @@ matters for notes left while nothing was watching (e.g. between sessions).
 ## 3. Build sections.json — the actual thinking
 
 This is the step where you earn your keep, so read the diff for real:
-`git diff --stat` for the shape, then the full diff (file by file for big
-branches). The mission is to shorten the review and save the human energy — a
+`git diff --stat --no-renames` for the shape, then the full diff (file by
+file for big branches). The mission is to shorten the review and save the human energy — a
 flat alphabetical file list hides the connections; your sections reveal them.
 
 A good section is a reviewable unit of *meaning*:
@@ -89,8 +89,8 @@ energy is highest at the start):
 - 2 — simple additive changes, config, templates
 - 1 — mechanical: renames, formatting, lockfiles, generated output
 
-Aim for 3–10 sections. **Coverage check**: every file in `git diff --stat`
-must land in at least one section (unless the user narrowed scope) — add a
+Aim for 3–10 sections. **Coverage check**: every file in
+`git diff --stat --no-renames` must land in at least one section (unless the user narrowed scope) — add a
 final low-difficulty "Everything else" section rather than silently dropping
 files.
 
@@ -117,7 +117,9 @@ Write `$WS/sections.json`:
 from files that mostly belong to another section (e.g. the one route added in
 a router file). Hunk `index` is 0-based in diff order — check with
 `scripts/render_diff.py --repo <repo> --target <target> --file <path> --json`
-or by counting `@@` blocks in `git diff <merge-base> -- <path>`.
+or by counting `@@` blocks in `git diff --no-renames <merge-base> -- <path>`.
+The scripts turn rename detection off, so a renamed file is a deleted old
+path plus an added new path. Put both paths in the same section.
 
 For a **scoped review** (user named a subset), also set a top-level
 `"scope": ["path/prefix", ...]` (git pathspecs). The server uses it to limit

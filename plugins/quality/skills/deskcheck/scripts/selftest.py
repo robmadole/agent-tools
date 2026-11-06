@@ -336,6 +336,29 @@ def main():
     code, out = emit(srv.delete_note, {'id': 999})
     assert code == 200 and out == '', (code, out)
 
+    # renames: the bulk page-build diff and the one-file /api/filediff diff
+    # must give a renamed file the same hunk IDs, or its body never loads
+    from render_diff import file_hunks, multi_file_hunks
+    rrepo = tmp / 'rename'
+    rrepo.mkdir()
+    sh(rrepo, 'git', 'init', '-q', '-b', 'main')
+    sh(rrepo, 'git', 'config', 'user.email', 't@t')
+    sh(rrepo, 'git', 'config', 'user.name', 't')
+    (rrepo / 'live_key.ex').write_text(''.join(f'line {i}\n' for i in range(40)))
+    sh(rrepo, 'git', 'add', '.')
+    sh(rrepo, 'git', 'commit', '-qm', 'init')
+    sh(rrepo, 'git', 'checkout', '-qb', 'feature')
+    sh(rrepo, 'git', 'mv', 'live_key.ex', 'collab_key.ex')
+    (rrepo / 'collab_key.ex').write_text(
+        ''.join(f'line {i}\n' for i in range(40)).replace('line 7', 'line seven'))
+    sh(rrepo, 'git', 'commit', '-qam', 'rename')
+    pair = ['live_key.ex', 'collab_key.ex']
+    bulk = multi_file_hunks(str(rrepo), 'main', pair)
+    for p in pair:
+        one = file_hunks(str(rrepo), 'main', p)
+        assert one, f'{p}: no hunks'
+        assert [h['id'] for h in bulk[p]] == [h['id'] for h in one], (p, bulk[p], one)
+
     httpd.shutdown()
     shutil.rmtree(tmp)
     print('PASS')

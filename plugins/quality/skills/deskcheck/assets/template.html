@@ -1384,6 +1384,9 @@ function ensureFile(path) {
             markCommentable(b);
             injectComments(b, path, h);
             injectNotes(b, path, h);
+          } else {
+            console.warn('deskcheck: hunk', b.dataset.hunkId, 'of', path, 'not in /api/filediff');
+            b.innerHTML = '<div class="empty">Diff unavailable: this hunk no longer matches the file. Reload the page.</div>';
           }
         });
         addTrailingGap(path, d.total_new);

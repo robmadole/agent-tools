@@ -62,6 +62,9 @@ Built 2026-07-22 → 2026-07-24.
   sized from hunk line counts so the scrollbar and jumps are accurate.
 - **Render cache** — hunk HTML cached in sqlite keyed by path + content hash
   (invalidation is free). Page build uses one bulk `git diff`. ~0.08s loads.
+- **No rename detection**: every `git diff` runs with `--no-renames`, so the
+  bulk page diff and the per-file diff agree on hunk IDs. A renamed file shows
+  as the old path deleted and the new path added.
 
 ## Navigation & UI
 - Left nav: sections with difficulty dots, progress bars, and **collapsible
