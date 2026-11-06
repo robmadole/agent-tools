@@ -603,7 +603,9 @@ def rendered_file(args, con, base, path):
     lexer = _lexer_for(path)
     out = []
     for e in entries:
-        ck = f'{RENDER_VERSION}:{path}:{e["id"]}'
+        # the id is content-only so review marks survive a hunk moving, but the
+        # HTML carries line numbers from the header, so the header keys it too
+        ck = f'{RENDER_VERSION}:{path}:{e["id"]}:{e["header"]}'
         with LOCK:
             row = con.execute('SELECT html FROM render_cache WHERE cache_key=?',
                               (ck,)).fetchone()

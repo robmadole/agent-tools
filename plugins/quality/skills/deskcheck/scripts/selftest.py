@@ -359,6 +359,30 @@ def main():
         assert one, f'{p}: no hunks'
         assert [h['id'] for h in bulk[p]] == [h['id'] for h in one], (p, bulk[p], one)
 
+    # a hunk that moves keeps its id (marks survive) but must not be served
+    # cached HTML with its old line numbers (#5)
+    srepo = tmp / 'shift'
+    srepo.mkdir()
+    sh(srepo, 'git', 'init', '-q', '-b', 'main')
+    sh(srepo, 'git', 'config', 'user.email', 't@t')
+    sh(srepo, 'git', 'config', 'user.name', 't')
+    body = ''.join(f'line {i}\n' for i in range(40))
+    (srepo / 'f.txt').write_text(body)
+    sh(srepo, 'git', 'add', '.')
+    sh(srepo, 'git', 'commit', '-qm', 'init')
+    sh(srepo, 'git', 'checkout', '-qb', 'feature')
+    (srepo / 'f.txt').write_text(body.replace('line 30\n', 'line thirty\n'))
+    sargs = argparse.Namespace(workspace=str(tmp), repo=str(srepo), target='main')
+    scon = srv.open_db(tempfile.mkdtemp(prefix='deskcheck-shift-'))
+    sbase = srv.merge_base(str(srepo), 'main')
+    before = srv.rendered_file(sargs, scon, sbase, 'f.txt')['hunks']
+    (srepo / 'f.txt').write_text('new 1\nnew 2\n' + body.replace('line 30\n', 'line thirty\n'))
+    after = srv.rendered_file(sargs, scon, sbase, 'f.txt')['hunks']
+    moved = [h for h in after if h['id'] == before[0]['id']]
+    assert len(after) == 2 and moved, (before, after)
+    assert moved[0]['html'] == render_file(str(srepo), 'main', 'f.txt')[1]['html'], \
+        'moved hunk served stale cached line numbers'
+
     httpd.shutdown()
     shutil.rmtree(tmp)
     print('PASS')
